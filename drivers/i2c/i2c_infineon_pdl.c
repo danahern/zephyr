@@ -478,6 +478,27 @@ static int ifx_cat1_i2c_configure(const struct device *dev, uint32_t dev_config)
 		k_sem_give(&data->operation_sem);
 		return -EIO;
 	}
+#elif defined(CONFIG_SOC_FAMILY_INFINEON_EDGE)
+	/* On PSE84 the peripheral clock divider is configured via device tree
+	 * (e.g. `&peri0_group1_16bit_1 { clock-div = <32>; }`), so we must NOT
+	 * override it here. But Cy_SCB_I2C_Init() only applies the default
+	 * HIGH/LOW phase duty cycles from _i2c_default_config — it does not
+	 * program the OVS oversampling field in SCB_CTRL. Without a call to
+	 * Cy_SCB_I2C_SetDataRate() the SCB runs with whatever OVS was left
+	 * from reset, which produces out-of-spec SCL timing and targets
+	 * silently NACK. Compute OVS now from the actual peri-clk frequency
+	 * and the target I2C rate.
+	 */
+	{
+		uint32_t peri_freq = ifx_cat1_utils_peri_pclk_get_frequency(
+			config->clk_dst, &data->clock);
+		if (peri_freq == 0U) {
+			LOG_ERR("Peripheral clock frequency is zero; check DT clock divider");
+			k_sem_give(&data->operation_sem);
+			return -EIO;
+		}
+		(void)Cy_SCB_I2C_SetDataRate(config->base, data->frequencyhal_hz, peri_freq);
+	}
 #endif
 
 #if defined(CONFIG_SOC_FAMILY_INFINEON_PSOC4)
