@@ -376,12 +376,14 @@ static DEVICE_API(display, pse84_gfxss_api) = {
 #define PSE84_GFXSS_PANEL(inst) NULL
 #endif
 
+#define PSE84_GFXSS_FB_NODE(inst) DT_INST_PHANDLE(inst, framebuffer)
+
 #define PSE84_GFXSS_DEFINE(inst)                                                                   \
 	static struct pse84_gfxss_data pse84_gfxss_data_##inst;                                    \
 	static const struct pse84_gfxss_config pse84_gfxss_config_##inst = {                       \
 		.base = (GFXSS_Type *)DT_INST_REG_ADDR(inst),                                      \
-		.fb_addr = DT_INST_PROP_BY_IDX(inst, framebuffer, 0),                              \
-		.fb_size = DT_INST_PROP_BY_IDX(inst, framebuffer, 1),                              \
+		.fb_addr = DT_REG_ADDR(PSE84_GFXSS_FB_NODE(inst)),                                 \
+		.fb_size = DT_REG_SIZE(PSE84_GFXSS_FB_NODE(inst)),                                 \
 		.width = DT_INST_PROP(inst, width),                                                \
 		.height = DT_INST_PROP(inst, height),                                              \
 		.stride_pixels = DT_INST_PROP_OR(inst, stride_pixels, DT_INST_PROP(inst, width)),  \

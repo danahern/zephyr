@@ -67,6 +67,22 @@
 		m55_data: memory@26100000 {
 			reg = <0x26100000 DT_SIZE_K(256)>;
 		};
+
+		/*
+		 * 1 MiB region of SOCMEM reserved for the GFXSS display
+		 * framebuffer. Fits an 832-pixel-stride 480-line RGB565
+		 * surface (832*480*2 = 798720 bytes) with room for small
+		 * alignment padding. Tagged as a zephyr,memory-region so
+		 * drivers can place FBs via LINKER_DT_NODE_REGION_NAME()
+		 * if they want linker-section placement (the GFXSS driver
+		 * just uses DT_REG_ADDR() since the CM55 linker does not
+		 * own SOCMEM).
+		 */
+		socmem_fb: memory@26240000 {
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x26240000 DT_SIZE_K(1024)>;
+			zephyr,memory-region = "SOCMEM_FB";
+		};
 	};
 
 	/* Default Flash memory(16MB) assignment

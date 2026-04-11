@@ -32,11 +32,16 @@ properties:
     required: true
 
   framebuffer:
-    type: array
+    type: phandle
     required: true
     description: |
-      [address, size] of the framebuffer in SOCMEM. Size must be at least
-      stride_pixels * height * bytes_per_pixel. See 'stride-pixels'.
+      Phandle to a memory node describing where the framebuffer lives
+      in SOCMEM. The referenced node must have a 'reg' property whose
+      size is at least stride_pixels * height * bytes_per_pixel (see
+      'stride-pixels'). The driver reads the address and size via
+      DT_REG_ADDR / DT_REG_SIZE and writes pixels there directly; the
+      node does not need to be a zephyr,memory-region because the CM55
+      linker does not own SOCMEM.
 
   stride-pixels:
     type: int
