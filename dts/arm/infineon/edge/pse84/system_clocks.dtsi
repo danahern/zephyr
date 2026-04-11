@@ -23,6 +23,17 @@
 		status = "okay";
 	};
 
+	/* ext — external clock input, enabled per-board with pinctrl for
+	 * the pin wired to srss.ext_clk (e.g. P7[4] on the kit_pse84_eval)
+	 */
+	clk_ext: clk_ext {
+		#clock-cells = <0>;
+		compatible = "infineon,fixed-clock";
+		clock-frequency = <0>;
+		system-clock = <IFX_EXT>;
+		status = "disabled";
+	};
+
 	/* pilo */
 	clk_pilo: clk_pilo {
 		#clock-cells = <0>;

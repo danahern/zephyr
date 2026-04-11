@@ -7,7 +7,7 @@ description: Generic fixed-rate clock provider
 
 compatible: "infineon,fixed-clock"
 
-include: fixed-clock.yaml
+include: [fixed-clock.yaml, pinctrl-device.yaml]
 
 properties:
   system-clock:

@@ -11,6 +11,7 @@
 
 #include <infineon_kconfig.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/kernel.h>
 #include <stdlib.h>
 
@@ -27,6 +28,7 @@
 struct fixed_rate_clock_config {
 	uint32_t rate;
 	uint32_t system_clock; /* ifx_cat1_clock_block */
+	const struct pinctrl_dev_config *pcfg;
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(dpll_hp))
 	cy_stc_dpll_hp_config_t dpll_hp_config;
 #endif
@@ -198,6 +200,18 @@ static int fixed_rate_clk_init(const struct device *dev)
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(clk_ext))
 	case IFX_EXT:
+		/* Bring up the external clock input pin (e.g. P7[4] =>
+		 * srss.ext_clk on kit_pse84_eval) via pinctrl so the signal
+		 * reaches the SRSS block before we tell the PDL its rate.
+		 */
+		if (config->pcfg != NULL) {
+			int pctl_err = pinctrl_apply_state(config->pcfg,
+							   PINCTRL_STATE_DEFAULT);
+
+			if (pctl_err < 0) {
+				return pctl_err;
+			}
+		}
 		Cy_SysClk_ExtClkSetFrequency(config->rate);
 		break;
 #endif
@@ -332,10 +346,23 @@ static int fixed_rate_clk_init(const struct device *dev)
 #define DPLL_LP_INIT(n)
 #endif
 
+/* pinctrl state is optional — only nodes whose clock source requires pin
+ * configuration (currently clk_ext) need a pinctrl-0 property.
+ */
+#define FIXED_CLK_PINCTRL_DEFINE(n)                                                                \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, pinctrl_0),                                           \
+		    (PINCTRL_DT_INST_DEFINE(n)), (EMPTY))
+
+#define FIXED_CLK_PINCTRL_PTR(n)                                                                   \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, pinctrl_0),                                           \
+		    (PINCTRL_DT_INST_DEV_CONFIG_GET(n)), (NULL))
+
 #define FIXED_CLK_INIT(n)                                                                          \
+	FIXED_CLK_PINCTRL_DEFINE(n);                                                               \
 	static const struct fixed_rate_clock_config fixed_rate_clock_config_##n = {                \
 		.rate = DT_INST_PROP(n, clock_frequency),                                          \
 		.system_clock = DT_INST_PROP(n, system_clock),                                     \
+		.pcfg = FIXED_CLK_PINCTRL_PTR(n),                                                  \
 		DPLL_HP_INIT(n)                                                                    \
 		DPLL_LP_INIT(n)                                                                    \
 	};                                                                                         \

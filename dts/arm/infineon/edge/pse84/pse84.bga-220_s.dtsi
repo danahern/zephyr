@@ -2071,6 +2071,11 @@
 			/omit-if-no-ref/ p20_7_can1_tx: p20_7_can1_tx {
 				pinmux = <DT_CAT1_PINMUX(20, 7, HSIOM_SEL_ACT_4)>;
 			};
+
+			/* srss.ext_clk — external clock input (used for clk_ext) */
+			/omit-if-no-ref/ p7_4_srss_ext_clk: p7_4_srss_ext_clk {
+				pinmux = <DT_CAT1_PINMUX(7, 4, HSIOM_SEL_ACT_4)>;
+			};
 		};
 	};
 };
