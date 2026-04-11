@@ -9,6 +9,8 @@
 #include <infineon/edge/mpns/pse846gps2dbzc4a.dtsi>
 #include <infineon/edge/pse84/pse84.cm55.dtsi>
 #include <infineon/edge/pse84/system_clocks.dtsi>
+#include <zephyr/dt-bindings/clock/ifx_clock_source_common.h>
+#include <zephyr/dt-bindings/clock/ifx_clock_source_pse8xx.h>
 
 #include "kit_pse84_eval_common.dtsi"
 #include "kit_pse84_eval_memory_map.dtsi"
@@ -59,6 +61,31 @@
 };
 
 &mcwdt1 {
+	status = "okay";
+};
+
+/*
+ * The kit routes a 24 MHz external clock to the SRSS EXT clock input on
+ * P7[4]. Route it through path_mux4 → clk_hf12 so the GFXSS MIPI-DSI
+ * D-PHY PLL reference (clk_hf12) has a stable source. Apps that do not
+ * use the display can leave this untouched; the path is only active
+ * when clk_hf12 is enabled.
+ */
+&clk_ext {
+	pinctrl-0 = <&p7_4_srss_ext_clk>;
+	pinctrl-names = "default";
+	clock-frequency = <24000000>;
+	status = "okay";
+};
+
+&path_mux4 {
+	source-path = <IFX_CAT1_CLKPATH_IN_EXT>;
+	status = "okay";
+};
+
+&clk_hf12 {
+	source-path = <IFX_CLK_HF_IN_CLKPATH4>;
+	clock-div = <IFX_CLK_HF_NO_DIVIDE>;
 	status = "okay";
 };
 

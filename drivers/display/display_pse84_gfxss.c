@@ -66,30 +66,6 @@ struct pse84_gfxss_data {
 	bool blanking;
 };
 
-/* TODO: move this into a board-level DT config so the display driver
- * doesn't reach into SRSS/pinctrl. Requires:
- *   - clk_ext DT node with pinctrl-0 = <&p7_4_srss_ext_clk> (binding
- *     + driver support added upstream in this PR)
- *   - path_mux4 { source-path = <IFX_CAT1_CLKPATH_IN_EXT>; }
- *   - clk_hf12 { source-path = <IFX_CLK_HF_IN_CLKPATH4>; status = okay; }
- *   - clk_ext also 'okay' on the M55 side so M55's copy of the Cypress
- *     PDL ExtClk software cache (Cy_SysClk_ExtClkSetFrequency) is
- *     populated — it's per-core static state.
- * See kit_pse84_eval board DT. Until then we configure everything here
- * from the M55 non-secure side (which has direct access to the SRSS
- * non-secure aperture on this SoC).
- */
-static void pse84_gfxss_setup_ext_clock(const struct pse84_gfxss_config *config)
-{
-	ARG_UNUSED(config);
-	Cy_GPIO_Pin_FastInit(GPIO_PRT7, 4U, CY_GPIO_DM_HIGHZ, 0UL, P7_4_SRSS_EXT_CLK);
-	Cy_SysClk_ExtClkSetFrequency(24000000UL);
-	(void)Cy_SysClk_ClkPathSetSource(4U, CY_SYSCLK_CLKPATH_IN_EXT);
-	(void)Cy_SysClk_ClkHfSetSource(12U, CY_SYSCLK_CLKHF_IN_CLKPATH4);
-	(void)Cy_SysClk_ClkHfSetDivider(12U, CY_SYSCLK_CLKHF_NO_DIVIDE);
-	(void)Cy_SysClk_ClkHfEnable(12U);
-}
-
 static void pse84_gfxss_build_hal_config(const struct device *dev)
 {
 	const struct pse84_gfxss_config *config = dev->config;
@@ -228,19 +204,20 @@ static int pse84_gfxss_init(const struct device *dev)
 	LOG_INF("Initializing PSE84 GFXSS: %ux%u RGB565 (stride %u) FB@%p (%u bytes)",
 		config->width, config->height, config->stride_pixels,
 		(void *)(uintptr_t)config->fb_addr, config->fb_size);
-
-	/* Bring up CLK_HF12 (DSI D-PHY PLL reference) from P7[4] external
-	 * 24 MHz clock. See pse84_gfxss_setup_ext_clock() comment — this
-	 * should eventually be pushed down to the board DT.
-	 */
-	pse84_gfxss_setup_ext_clock(config);
 	LOG_INF("clocks: HF1=%u HF10=%u HF12=%u",
 		(unsigned int)Cy_SysClk_ClkHfGetFrequency(1U),
 		(unsigned int)Cy_SysClk_ClkHfGetFrequency(10U),
 		(unsigned int)Cy_SysClk_ClkHfGetFrequency(12U));
 
+	/* The driver depends on the board DT having enabled the DSI D-PHY
+	 * PLL reference clock chain (typically IFX_EXT → clk_pathN →
+	 * clk_hf12). Bail out rather than crash deep in the HAL if HF12 is
+	 * not running — the board overlay needs fixing.
+	 */
 	if (Cy_SysClk_ClkHfGetFrequency(12U) == 0U) {
-		LOG_ERR("CLK_HF12 is not running; D-PHY PLL will never lock");
+		LOG_ERR("CLK_HF12 is not running; check that the board DT has "
+			"enabled a clock source on clk_hf12 (the DSI D-PHY "
+			"PLL reference)");
 		return -EIO;
 	}
 
