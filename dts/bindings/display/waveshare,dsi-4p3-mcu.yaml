@@ -1,0 +1,43 @@
+#
+# Copyright (c) 2026 Dan Ahern
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+description: |
+  Waveshare 4.3" MIPI-DSI display with on-board MCU.
+
+  This board hosts an ICN6211 DSI-to-RGB bridge + an Atmel-style MCU that
+  sequences the bridge and LCD power. The MCU exposes a small register set
+  over I2C at address 0x45:
+
+    0x80  device ID (read, returns 0xC3)
+    0x81  power control (write 0x04 to power on)
+    0x85  display enable (0x00 = off, 0x01 = on)
+    0x86  brightness (0x00..0xFF)
+
+  This is distinct from the bare ICN6211 boards handled by the existing
+  'waveshare,dsi2dpi' binding which uses a completely different register
+  set (0xc0, 0xc2, 0xac, 0xab, 0xaa, 0xad).
+
+  The panel is driven by a host display controller (the GFXSS on PSE84).
+  Its init sequence must run *after* the host DSI link is already
+  transmitting, so this node is typically marked 'zephyr,deferred-init'
+  and the host driver calls device_init() on the panel phandle after
+  its own bring-up plus a stabilization delay.
+
+compatible: "waveshare,dsi-4p3-mcu"
+
+include: [base.yaml]
+
+on-bus: i2c
+
+properties:
+  reg:
+    required: true
+    description: I2C address of the panel MCU (0x45 on the standard board).
+
+  default-brightness:
+    type: int
+    default: 255
+    description: Brightness value written to 0x86 during init (0..255).

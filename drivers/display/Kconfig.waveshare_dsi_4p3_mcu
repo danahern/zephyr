@@ -1,0 +1,16 @@
+# Copyright (c) 2026 Dan Ahern
+# SPDX-License-Identifier: Apache-2.0
+
+config WAVESHARE_DSI_4P3_MCU
+	bool "Waveshare 4.3\" MIPI-DSI panel with on-board MCU"
+	default y
+	depends on DT_HAS_WAVESHARE_DSI_4P3_MCU_ENABLED
+	depends on I2C
+	help
+	  Driver for the Waveshare 4.3" MIPI-DSI display with on-board MCU
+	  (800x480). The MCU exposes an I2C register set for power, enable,
+	  brightness at address 0x45; register layout is distinct from the
+	  bare ICN6211 handled by WAVESHARE_DSI2DPI. Intended to be driven
+	  by a host display controller (e.g. infineon,pse84-gfxss); the
+	  panel node is typically marked 'zephyr,deferred-init' so the host
+	  can run the panel init with device_init() after the DSI link is up.
