@@ -152,12 +152,12 @@ const cy_stc_mpc_regions_t m55_mpc_regions[] = {
 	{
 		.base = (MPC_Type *)SMIF0_CACHE_BLOCK_CACHEBLK_AHB_MPC0,
 		.offset = 0x00500000,
-		.size = 0x00300000,
+		.size = 0x00B00000,
 	},
 	{
 		.base = (MPC_Type *)SMIF0_CORE_AXI_MPC0,
 		.offset = 0x00500000,
-		.size = 0x00300000,
+		.size = 0x00B00000,
 	},
 	{
 		.base = (MPC_Type *)SOCMEM_SRAM_MPC0,
