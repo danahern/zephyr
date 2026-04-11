@@ -1,5 +1,83 @@
-description: Infineon CAT1 QSPI flash controller
+description: |
+  Infineon CAT1 SMIF flash controller.
+
+  This binding covers both the QSPI (Quad-SPI 1-4-4) and OSPI (Octal-SPI 1-8-8
+  or 8-8-8 DDR) operating modes of the Infineon SMIF IP. The default property
+  values match the legacy Quad SDR operation on chip-select 1 that existed
+  before these properties were introduced, so boards that do not set any of
+  the new properties get exactly the same behavior as before.
+
+  The driver reads these properties from the controller node and uses them
+  when it calls mtb_serial_memory_setup() into the hal_infineon serial-memory
+  helper, which in turn configures the SMIF register block and (for octal
+  memories) runs Cy_SMIF_MemOctalEnable().
 
 compatible: "infineon,qspi-flash"
 
 include: flash-controller.yaml
+
+properties:
+  chip-select:
+    type: int
+    default: 1
+    enum:
+      - 0
+      - 1
+      - 2
+      - 3
+    description: |
+      SMIF chip-select (0..3) to use for the single memory the driver owns.
+      Defaults to 1 to match the historical hardcoded behavior
+      (MTB_SERIAL_MEMORY_CHIP_SELECT_1) used by the S25FS128S on CS1 of
+      kit_pse84_eval.
+
+  io-mode:
+    type: string
+    default: "quad"
+    enum:
+      - "single"
+      - "dual"
+      - "quad"
+      - "octal"
+    description: |
+      Bus width used for the read/program command data phase. Maps to
+      CY_SMIF_WIDTH_SINGLE / _DUAL / _QUAD / _OCTAL for the corresponding
+      deviceCfg entry in the memslot configuration. Defaults to "quad"
+      to match legacy behavior. Selecting "octal" requires the memslot
+      declaration to provide an Octal-capable command set; see the
+      cycfg_qspi_memslot.c file in the zephyr-ifx-cycfg west module.
+
+  data-rate:
+    type: string
+    default: "sdr"
+    enum:
+      - "sdr"
+      - "ddr"
+    description: |
+      Data rate used on the SMIF bus. "sdr" is single data rate (one bit
+      per clock edge); "ddr" is double data rate (used by Octal DDR /
+      xSPI / HyperBus-style devices). Maps to CY_SMIF_SDR / CY_SMIF_DDR
+      on the memslot read command.
+
+  rx-capture-mode:
+    type: string
+    default: "normal-spi"
+    enum:
+      - "normal-spi"
+      - "normal-spi-with-dlp"
+      - "xspi-hyperbus-with-dqs"
+    description: |
+      RX capture mode for the SMIF receive path. Maps to
+      cy_en_smif_capture_mode_t. "normal-spi" matches legacy SDR Quad
+      operation. "xspi-hyperbus-with-dqs" is required for Octal DDR
+      with a data-strobe signal (typical for Infineon SEMPER Octal NOR
+      and HyperRAM devices).
+
+  smif-frequency:
+    type: int
+    default: 50000000
+    description: |
+      SMIF bus pin frequency in Hz after the controller's internal /2
+      divider. 50 MHz is safe for Quad SDR. 200 MHz is typical for
+      Octal DDR with DQS/DLL calibration. Must be paired with an
+      appropriate data-rate and rx-capture-mode.

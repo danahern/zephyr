@@ -44,6 +44,16 @@ static uint32_t smif1_crypto_input3;
 #define SMIF0_CORE0 SMIF0_CORE
 #endif /* defined(CY_DEVICE_PSE84) */
 
+/* Translate the DT 'chip-select' integer to the mtb_serial_memory chip-select
+ * enum. Defaults (via the binding default) to 1 to preserve the historical
+ * hardcoded behavior for boards that predate this property.
+ */
+#define IFX_SMIF_CS_FROM_DT(inst)                                                              \
+	((DT_INST_PROP(inst, chip_select) == 0) ? MTB_SERIAL_MEMORY_CHIP_SELECT_0                  \
+	 : (DT_INST_PROP(inst, chip_select) == 1) ? MTB_SERIAL_MEMORY_CHIP_SELECT_1                \
+	 : (DT_INST_PROP(inst, chip_select) == 2) ? MTB_SERIAL_MEMORY_CHIP_SELECT_2                \
+	 : MTB_SERIAL_MEMORY_CHIP_SELECT_3)
+
 const mtb_hal_hf_clock_t flash_clock_ref = {
 	.inst_num = 3U,
 };
@@ -240,8 +250,10 @@ static int ifx_serial_memory_flash_init(const struct device *dev)
 
 	cy_rslt_t result;
 
-	/* Set-up serial memory. */
-	result = mtb_serial_memory_setup(&serial_memory_obj, MTB_SERIAL_MEMORY_CHIP_SELECT_1,
+	/* Set-up serial memory. The chip-select comes from DT (binding
+	 * default is 1 to match legacy behavior when no DT property is set).
+	 */
+	result = mtb_serial_memory_setup(&serial_memory_obj, IFX_SMIF_CS_FROM_DT(0),
 					 SMIF0_CORE0, &CYBSP_SMIF_CORE_0_XSPI_FLASH_hal_clock,
 					 &smif_mem_context, &smif_mem_info, &smif0BlockConfig);
 	if (result != CY_RSLT_SUCCESS) {
