@@ -1,0 +1,74 @@
+/*
+ * Copyright (c) 2026 Dan Ahern
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/display/panel.h>
+
+/*
+ * Enable the PSE84 GFXSS display controller driving the Waveshare 4.3"
+ * MIPI-DSI panel (800x480) with an on-board MCU bridge. The panel MCU
+ * only responds on I2C after the DSI link is transmitting, so the
+ * panel node is marked zephyr,deferred-init and the GFXSS driver
+ * calls device_init() on it after its own bring-up + a stabilization
+ * delay (see drivers/display/display_pse84_gfxss.c).
+ */
+
+&peri0_group1_16bit_1 {
+	status = "okay";
+	clock-div = <32>;
+};
+
+&p8_0_scb0_i2c_scl {
+	drive-open-drain;
+	input-enable;
+};
+
+&p8_1_scb0_i2c_sda {
+	drive-open-drain;
+	input-enable;
+};
+
+&scb0 {
+	compatible = "infineon,i2c";
+	status = "okay";
+	clock-frequency = <100000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	clocks = <&peri0_group1_16bit_1>;
+	pinctrl-0 = <&p8_0_scb0_i2c_scl &p8_1_scb0_i2c_sda>;
+	pinctrl-names = "default";
+
+	waveshare_4p3: waveshare_4p3@45 {
+		compatible = "waveshare,dsi-4p3-mcu";
+		reg = <0x45>;
+		default-brightness = <255>;
+		zephyr,deferred-init;
+		status = "okay";
+	};
+};
+
+&gfxss {
+	status = "okay";
+	width = <800>;
+	height = <480>;
+	stride-pixels = <832>;
+	pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
+	framebuffer = <&socmem_fb>;
+	num-lanes = <1>;
+	per-lane-mbps = <810>;
+	pixel-clock-khz = <33768>;
+	hsync-width = <10>;
+	hfp = <210>;
+	hbp = <20>;
+	vsync-width = <5>;
+	vfp = <20>;
+	vbp = <20>;
+};
+
+/ {
+	chosen {
+		zephyr,display = &gfxss;
+	};
+};
