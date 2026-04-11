@@ -1241,6 +1241,12 @@
 				channel = <5>;
 				status = "disabled";
 			};
+
+			gfxss: gfxss@44800000 {
+				compatible = "infineon,pse84-gfxss";
+				reg = <0x44800000 0x10000>;
+				status = "disabled";
+			};
 		};
 	};
 };

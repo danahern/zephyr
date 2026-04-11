@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Dan Ahern
+# SPDX-License-Identifier: Apache-2.0
+
+config DISPLAY_PSE84_GFXSS
+	bool "Infineon PSE84 GFXSS display controller"
+	default y
+	depends on DT_HAS_INFINEON_PSE84_GFXSS_ENABLED
+	depends on SOC_FAMILY_INFINEON_EDGE
+	select USE_INFINEON_GFXSS
+	help
+	  Enable the Infineon PSE84 GFXSS (Graphics Subsystem) display
+	  controller driver. Wraps the Cypress HAL (Cy_GFXSS_Init) and
+	  exposes the standard Zephyr display_driver_api. Operates the
+	  DSI link in VIDEO mode: the DC autonomously scans the
+	  framebuffer in SOCMEM after init. display_write() copies
+	  pixels into the FB with a D-cache clean so the DC picks them
+	  up on the next vsync.
+
+if DISPLAY_PSE84_GFXSS
+
+config DISPLAY_PSE84_GFXSS_PANEL_INIT_DELAY_MS
+	int "Panel MCU stabilization delay (ms)"
+	default 250
+	help
+	  How long to wait after Cy_GFXSS_Init before calling the panel's
+	  init function. The Waveshare 4.3" MCU panel needs ~250 ms after
+	  the DSI link comes up before it will respond to I2C commands.
+
+endif # DISPLAY_PSE84_GFXSS

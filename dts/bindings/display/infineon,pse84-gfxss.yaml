@@ -1,0 +1,98 @@
+#
+# Copyright (c) 2026 Dan Ahern
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+description: |
+  Infineon PSE84 GFXSS (Graphics Subsystem) display controller.
+
+  The GFXSS bundles a Vivante DCNano display controller, a MIPI DSI host
+  (Synopsys DWC), and an optional GPU into one IP block at 0x44800000.
+  The framebuffer is backed by SOCMEM (DC reads via a dedicated DMA port,
+  not from main SRAM).
+
+  This driver wraps the Cypress HAL (Cy_GFXSS_Init) and exposes the standard
+  Zephyr display_driver_api. It operates the DSI link in VIDEO mode: after
+  initialization the DC autonomously scans the framebuffer. Software writes
+  pixels into the FB via display_write() and a D-cache clean ensures the DC
+  sees the update on the next vsync.
+
+  The DSI D-PHY PLL reference is CLK_HF12. The driver expects the board DT
+  to have already routed a suitable clock into HF12 (e.g. via clk_ext →
+  path_mux4 → clk_hf12 on the KIT_PSE84_EVAL, which wires a 24 MHz external
+  clock to P7[4]/srss.ext_clk). It fails fast if HF12 reads 0 Hz at init.
+
+compatible: "infineon,pse84-gfxss"
+
+include: [lcd-controller.yaml]
+
+properties:
+  reg:
+    required: true
+
+  framebuffer:
+    type: array
+    required: true
+    description: |
+      [address, size] of the framebuffer in SOCMEM. Size must be at least
+      stride * height * bytes_per_pixel. The stride used by the DC is
+      'width' (with RGB565 that means width*2 bytes per row). On PSE84 the
+      DC requires the stride in bytes to be 128-byte aligned, so for RGB565
+      with a physical panel width of 800 the 'width' property should be 832
+      (832*2 = 1664 = 13 * 128). The panel's bridge chip handles the 832→800
+      conversion.
+
+  num-lanes:
+    type: int
+    required: true
+    description: Number of MIPI DSI data lanes (1 for the Waveshare 4.3").
+
+  per-lane-mbps:
+    type: int
+    required: true
+    description: Per-lane DSI line rate in megabits per second (810 for 4.3").
+
+  pixel-clock-khz:
+    type: int
+    required: true
+    description: |
+      DPI pixel clock in kHz. Computed as
+        (hsync_width + hfp + hbp + width) *
+        (vsync_width + vfp + vbp + height) * fps / 1000
+
+  hsync-width:
+    type: int
+    required: true
+
+  hfp:
+    type: int
+    required: true
+    description: Horizontal front porch in pixel clocks.
+
+  hbp:
+    type: int
+    required: true
+    description: Horizontal back porch in pixel clocks.
+
+  vsync-width:
+    type: int
+    required: true
+
+  vfp:
+    type: int
+    required: true
+    description: Vertical front porch in lines.
+
+  vbp:
+    type: int
+    required: true
+    description: Vertical back porch in lines.
+
+# Panel association is resolved at compile time via DEVICE_DT_GET_ANY()
+# on a known panel compatible (e.g. waveshare,dsi-4p3-mcu), not by a
+# phandle property, so the EDT init priority validator does not see a
+# dependency from this node to the panel. This lets the panel be marked
+# 'zephyr,deferred-init' (required for panels whose control interface
+# only responds after the DSI link is already transmitting) without
+# blocking GFXSS bring-up.
