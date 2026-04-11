@@ -46,6 +46,12 @@ config USE_INFINEON_I2C
 	help
 	  Enable Inter-Integrated Circuit Interface (I2C) HAL module driver for Infineon devices
 
+config USE_INFINEON_GFXSS
+	bool "Infineon GFXSS HAL (PSE84 display controller)"
+	help
+	  Enable Graphics Subsystem (GFXSS) HAL driver: cy_graphics, cy_mipidsi, and
+	  the DCNano viv kernel sources for the PSE84 display controller.
+
 config USE_INFINEON_I3C
 	bool
 	help

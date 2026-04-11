@@ -107,3 +107,36 @@ zephyr_library_sources(${pdl_drv_dir}/source/cy_trigmux.c)
 
 zephyr_include_directories(${hal_dir}/include)
 zephyr_library_sources(${hal_dir}/source/mtb_hal_clock.c)
+
+# === GFXSS Graphics Subsystem (DCNano + MIPI DSI) ===
+if(CONFIG_USE_INFINEON_GFXSS)
+  set(gfxss_dir ${pdl_drv_dir}/third_party/COMPONENT_GFXSS)
+  set(viv_kernel_dir ${gfxss_dir}/vsi/dcnano8000/DCKernel)
+  set(viv_user_dir ${gfxss_dir}/vsi/dcnano8000/DCUser)
+
+  zephyr_include_directories(${gfxss_dir})
+  zephyr_include_directories(${gfxss_dir}/vsi/gcnano/inc)
+  zephyr_include_directories(${gfxss_dir}/vsi/dcnano8000/include)
+  zephyr_include_directories(${viv_kernel_dir})
+  zephyr_include_directories(${viv_kernel_dir}/rtos)
+  zephyr_include_directories(${viv_kernel_dir}/hardware/8000Nano)
+  zephyr_include_directories(${viv_user_dir})
+  zephyr_include_directories(${viv_user_dir}/rtos)
+
+  zephyr_library_sources(${gfxss_dir}/cy_graphics.c)
+  zephyr_library_sources(${pdl_drv_dir}/source/cy_mipidsi.c)
+  # NOTE: cy_sysint_v2.c is NOT linked — Zephyr SoC has its own stub
+  # Use Zephyr's IRQ_CONNECT instead of Cy_SysInt_Init.
+  zephyr_library_sources(${viv_kernel_dir}/viv_dc_database.c)
+  zephyr_library_sources(${viv_kernel_dir}/viv_dc_core.c)
+  zephyr_library_sources(${viv_kernel_dir}/viv_dc_lcd.c)
+  zephyr_library_sources(${viv_kernel_dir}/viv_dc_shell.c)
+  zephyr_library_sources(${viv_kernel_dir}/dc_layer_feature.c)
+  zephyr_library_sources(${viv_kernel_dir}/hardware/8000Nano/viv_dc_hardware.c)
+  zephyr_library_sources(${viv_kernel_dir}/rtos/viv_dc_platform.c)
+  zephyr_library_sources(${viv_user_dir}/viv_dc_setting.c)
+  zephyr_library_sources(${viv_user_dir}/viv_dc_util.c)
+  zephyr_library_sources(${viv_user_dir}/viv_dc_tools.c)
+  zephyr_library_sources(${viv_user_dir}/rtos/viv_dc_os.c)
+  zephyr_library_sources(${viv_user_dir}/rtos/viv_dc_interface.c)
+endif()
