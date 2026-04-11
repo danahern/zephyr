@@ -785,6 +785,12 @@
 				phase-length = <0x22>;
 				vcomh-voltage = <0x2>;
 			};
+
+			test_waveshare_dsi_4p3_mcu: waveshare_dsi_4p3_mcu@45 {
+				compatible = "waveshare,dsi-4p3-mcu";
+				reg = <0x45>;
+				default-brightness = <255>;
+			};
 		};
 	};
 };

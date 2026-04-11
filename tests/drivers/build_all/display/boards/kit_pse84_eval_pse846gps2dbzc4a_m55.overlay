@@ -1,0 +1,62 @@
+/*
+ * Copyright (c) 2026 Dan Ahern
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/display/panel.h>
+
+/*
+ * Platform-specific build test for the Infineon PSE84 GFXSS display
+ * controller. Exercises the driver plus its Waveshare 4.3" MCU panel
+ * child on the real kit_pse84_eval M55 target since the GFXSS HAL is
+ * PSE84-specific and cannot compile on the native_sim platform used
+ * by the default build_all.display test.
+ *
+ * The panel I2C bus reuses scb0 (same as pse84_i2c_test); the panel
+ * node is marked zephyr,deferred-init because its MCU only responds
+ * over I2C after the DSI link is transmitting, and the GFXSS driver
+ * calls device_init() on it with DEVICE_DT_GET_ANY(waveshare_dsi_4p3_mcu)
+ * after its own init and a stabilization delay.
+ */
+
+&peri0_group1_16bit_1 {
+	status = "okay";
+	clock-div = <32>;
+};
+
+&scb0 {
+	compatible = "infineon,i2c";
+	status = "okay";
+	clock-frequency = <100000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	clocks = <&peri0_group1_16bit_1>;
+	pinctrl-0 = <&p8_0_scb0_i2c_scl &p8_1_scb0_i2c_sda>;
+	pinctrl-names = "default";
+
+	test_gfxss_panel: waveshare_4p3@45 {
+		compatible = "waveshare,dsi-4p3-mcu";
+		reg = <0x45>;
+		default-brightness = <255>;
+		zephyr,deferred-init;
+	};
+};
+
+&gfxss {
+	status = "okay";
+	width = <800>;
+	height = <480>;
+	stride-pixels = <832>;
+	pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
+	framebuffer = <&socmem_fb>;
+	num-lanes = <1>;
+	per-lane-mbps = <810>;
+	pixel-clock-khz = <33768>;
+	hsync-width = <10>;
+	hfp = <210>;
+	hbp = <20>;
+	vsync-width = <5>;
+	vfp = <20>;
+	vbp = <20>;
+};
