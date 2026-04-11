@@ -36,12 +36,19 @@ properties:
     required: true
     description: |
       [address, size] of the framebuffer in SOCMEM. Size must be at least
-      stride * height * bytes_per_pixel. The stride used by the DC is
-      'width' (with RGB565 that means width*2 bytes per row). On PSE84 the
-      DC requires the stride in bytes to be 128-byte aligned, so for RGB565
-      with a physical panel width of 800 the 'width' property should be 832
-      (832*2 = 1664 = 13 * 128). The panel's bridge chip handles the 832→800
-      conversion.
+      stride_pixels * height * bytes_per_pixel. See 'stride-pixels'.
+
+  stride-pixels:
+    type: int
+    description: |
+      Row stride of the framebuffer in pixels. If unset, defaults to 'width'.
+      On PSE84 the DC requires the row stride in bytes to be 128-byte
+      aligned, so panels whose width does not satisfy that constraint need
+      stride-pixels > width. For example, an RGB565 800-pixel-wide panel
+      needs stride-pixels = 832 (832*2 = 1664 = 13*128). The tail pixels
+      in each row are included in the DSI hactive so the DSI-to-RGB bridge
+      on the panel can fetch them; the bridge itself is responsible for
+      cropping to the physical display width.
 
   num-lanes:
     type: int

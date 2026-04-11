@@ -37,8 +37,9 @@ struct pse84_gfxss_config {
 	GFXSS_Type *base;
 	uint32_t fb_addr;
 	uint32_t fb_size;
-	uint16_t width;    /* stride in pixels (must be 128-byte-stride aligned) */
+	uint16_t width;         /* visible panel width in pixels */
 	uint16_t height;
+	uint16_t stride_pixels; /* framebuffer row stride in pixels (>= width) */
 	uint16_t pixel_clock_khz;
 	uint16_t hsync_width;
 	uint16_t hfp;
@@ -102,7 +103,11 @@ static void pse84_gfxss_build_hal_config(const struct device *dev)
 		.tiling_type = vivLINEAR,
 		.pos_x = 0,
 		.pos_y = 0,
-		.width = config->width,
+		/* Layer 'width' is the DMA fetch stride; use stride_pixels so
+		 * rows are 128-byte aligned even when the panel's visible
+		 * width is not.
+		 */
+		.width = config->stride_pixels,
 		.height = config->height,
 		.zorder = 0,
 		.layer_enable = true,
@@ -140,7 +145,8 @@ static void pse84_gfxss_build_hal_config(const struct device *dev)
 		.display_type = GFX_DISP_TYPE_DSI_DPI,
 		.display_format = vivD24,
 		.display_size = vivDISPLAY_CUSTOMIZED,
-		.display_width = config->width,
+		/* DC output width must equal the DSI hactive below. */
+		.display_width = config->stride_pixels,
 		.display_height = config->height,
 	};
 
@@ -148,7 +154,10 @@ static void pse84_gfxss_build_hal_config(const struct device *dev)
 
 	data->dsi_params = (cy_stc_mipidsi_display_params_t){
 		.pixel_clock = config->pixel_clock_khz,
-		.hdisplay = config->width,
+		/* hdisplay must match the layer/DC stride so every pixel the
+		 * DC emits has a corresponding byte in the framebuffer.
+		 */
+		.hdisplay = config->stride_pixels,
 		.hsync_width = config->hsync_width,
 		.hfp = config->hfp,
 		.hbp = config->hbp,
@@ -216,9 +225,9 @@ static int pse84_gfxss_init(const struct device *dev)
 	struct pse84_gfxss_data *data = dev->data;
 	cy_en_gfx_status_t rc;
 
-	LOG_INF("Initializing PSE84 GFXSS: %ux%u RGB565 FB@%p (%u bytes)",
-		config->width, config->height, (void *)(uintptr_t)config->fb_addr,
-		config->fb_size);
+	LOG_INF("Initializing PSE84 GFXSS: %ux%u RGB565 (stride %u) FB@%p (%u bytes)",
+		config->width, config->height, config->stride_pixels,
+		(void *)(uintptr_t)config->fb_addr, config->fb_size);
 
 	/* Bring up CLK_HF12 (DSI D-PHY PLL reference) from P7[4] external
 	 * 24 MHz clock. See pse84_gfxss_setup_ext_clock() comment — this
@@ -261,7 +270,7 @@ static int pse84_gfxss_write(const struct device *dev, const uint16_t x, const u
 	const struct pse84_gfxss_config *config = dev->config;
 	const uint8_t *src = buf;
 	const uint32_t bytes_per_pixel = 2U; /* RGB565 only for now */
-	uint32_t stride_bytes = (uint32_t)config->width * bytes_per_pixel;
+	uint32_t stride_bytes = (uint32_t)config->stride_pixels * bytes_per_pixel;
 	uint32_t src_stride_bytes = (uint32_t)desc->pitch * bytes_per_pixel;
 	uint32_t row_copy_bytes = (uint32_t)desc->width * bytes_per_pixel;
 	uint32_t max_x = (uint32_t)x + desc->width;
@@ -375,6 +384,7 @@ static DEVICE_API(display, pse84_gfxss_api) = {
 		.fb_size = DT_INST_PROP_BY_IDX(inst, framebuffer, 1),                              \
 		.width = DT_INST_PROP(inst, width),                                                \
 		.height = DT_INST_PROP(inst, height),                                              \
+		.stride_pixels = DT_INST_PROP_OR(inst, stride_pixels, DT_INST_PROP(inst, width)),  \
 		.pixel_clock_khz = DT_INST_PROP(inst, pixel_clock_khz),                            \
 		.hsync_width = DT_INST_PROP(inst, hsync_width),                                    \
 		.hfp = DT_INST_PROP(inst, hfp),                                                    \
