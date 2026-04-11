@@ -260,13 +260,15 @@ static int pse84_gfxss_write(const struct device *dev, const uint16_t x, const u
 {
 	const struct pse84_gfxss_config *config = dev->config;
 	const uint8_t *src = buf;
-	uint8_t *fb;
 	const uint32_t bytes_per_pixel = 2U; /* RGB565 only for now */
 	uint32_t stride_bytes = (uint32_t)config->width * bytes_per_pixel;
 	uint32_t src_stride_bytes = (uint32_t)desc->pitch * bytes_per_pixel;
 	uint32_t row_copy_bytes = (uint32_t)desc->width * bytes_per_pixel;
 	uint32_t max_x = (uint32_t)x + desc->width;
 	uint32_t max_y = (uint32_t)y + desc->height;
+	uint8_t *fb_row0;
+	uint8_t *fb;
+	uint32_t dirty_span_bytes;
 
 	if (max_x > config->width || max_y > config->height) {
 		LOG_ERR("write out of bounds: (%u,%u) %ux%u vs %ux%u", x, y, desc->width,
@@ -278,9 +280,9 @@ static int pse84_gfxss_write(const struct device *dev, const uint16_t x, const u
 		return -EINVAL;
 	}
 
-	fb = (uint8_t *)(uintptr_t)config->fb_addr + (uint32_t)y * stride_bytes +
-	     (uint32_t)x * bytes_per_pixel;
-
+	fb_row0 = (uint8_t *)(uintptr_t)config->fb_addr + (uint32_t)y * stride_bytes +
+		  (uint32_t)x * bytes_per_pixel;
+	fb = fb_row0;
 	for (uint32_t row = 0; row < desc->height; row++) {
 		memcpy(fb, src, row_copy_bytes);
 		fb += stride_bytes;
@@ -288,9 +290,14 @@ static int pse84_gfxss_write(const struct device *dev, const uint16_t x, const u
 	}
 
 	/* CM55 has D-cache enabled and the framebuffer is in SOCMEM. Clean
-	 * the dirty lines so the DC DMA sees our writes on the next vsync.
+	 * only the dirty range so the DC DMA sees our writes on the next
+	 * vsync. SCB_CleanDCache_by_Addr() rounds down to a cache-line
+	 * boundary and up by the size, so we only need to pass the first
+	 * dirty byte and a length that covers every row touched by memcpy
+	 * above (including any stride tail bytes the cache line spans).
 	 */
-	SCB_CleanDCache_by_Addr((uint32_t *)(uintptr_t)config->fb_addr, config->fb_size);
+	dirty_span_bytes = ((uint32_t)desc->height - 1U) * stride_bytes + row_copy_bytes;
+	SCB_CleanDCache_by_Addr((uint32_t *)fb_row0, (int32_t)dirty_span_bytes);
 	__DSB();
 	__ISB();
 	return 0;
