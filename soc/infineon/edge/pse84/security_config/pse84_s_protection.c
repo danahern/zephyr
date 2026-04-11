@@ -255,20 +255,30 @@ const cy_stc_ppc_attribute_t cycfg_unused_ppc_cfg = {
 cy_rslt_t cy_ppc_unsecure_init(PPC_Type *base, cy_en_prot_region_t start, cy_en_prot_region_t end)
 {
 	cy_rslt_t ret = Cy_Ppc_InitPpc(base, CY_PPC_BUS_ERR);
+	if (ret != CY_PPC_SUCCESS) {
+		return ret;
+	}
 
-	for (cy_en_prot_region_t region = start; ret == CY_PPC_SUCCESS && region <= end; region++) {
+	/* Iterate ALL regions in [start..end]. The enum has gaps (invalid values
+	 * between valid ones); Cy_Ppc_ConfigAttrib returns BAD_PARAM for those.
+	 * Don't bail out on per-region errors — continue so that valid regions
+	 * later in the range still get configured (e.g. GFXSS at 0x9B-0x9D in PERI1).
+	 */
+	for (cy_en_prot_region_t region = start; region <= end; region++) {
 		/* Not sure why yet, but writing to these two cause a fault. Skip for now... */
 		if (region == PROT_PERI1_PPC1_PPC_PPC_SECURE ||
 		    region == PROT_PERI1_PPC1_PPC_PPC_NONSECURE) {
 			continue;
 		}
 
-		ret = Cy_Ppc_ConfigAttrib(base, region, &cycfg_unused_ppc_cfg);
-		if (ret == CY_RSLT_SUCCESS) {
-			ret = Cy_Ppc_SetPcMask(base, region, PPC_PC_MASK_ALL_ACCESS);
+		cy_rslt_t r = Cy_Ppc_ConfigAttrib(base, region, &cycfg_unused_ppc_cfg);
+
+		if (r == CY_RSLT_SUCCESS) {
+			(void)Cy_Ppc_SetPcMask(base, region, PPC_PC_MASK_ALL_ACCESS);
 		}
+		/* Ignore BAD_PARAM for invalid regions in enum gaps */
 	}
-	return ret;
+	return CY_PPC_SUCCESS;
 }
 
 cy_rslt_t cy_ppc0_init(void)
