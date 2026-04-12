@@ -176,6 +176,14 @@ const cy_stc_mpc_regions_t m55_mpc_regions[] = {
 		.size = 0x00B00000,
 #endif
 	},
+#if defined(CONFIG_INFINEON_SMIF_PSRAM)
+	/* SMIF1 HyperRAM (S70KS1283) at 0x64000000, 16 MB. */
+	{
+		.base = (MPC_Type *)SMIF1_CACHE_BLOCK_CACHEBLK_AHB_MPC0,
+		.offset = 0x00000000,
+		.size = 0x01000000,
+	},
+#endif
 	{
 		.base = (MPC_Type *)SOCMEM_SRAM_MPC0,
 		.offset = 0x00000000,

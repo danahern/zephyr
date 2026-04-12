@@ -30,7 +30,7 @@ zephyr_sources(security_config/pse84_boot.c)
 # calls Cy_SMIF_MemInit to transition SMIF0 from Quad to Octal mode; that
 # transient makes XIP fetches unreliable, so the caller has to live in SRAM
 # too (the PDL's cy_smif*.c files are already relocated via hal_infineon).
-if(CONFIG_INFINEON_SMIF_OCTAL)
+if(CONFIG_INFINEON_SMIF_OCTAL OR CONFIG_INFINEON_SMIF_PSRAM)
   if(CONFIG_CPU_CORTEX_M33 AND CONFIG_TRUSTED_EXECUTION_SECURE)
     set(ifx_pse84_sram_code M33SCODE)
   elseif(CONFIG_CPU_CORTEX_M33)

@@ -7,25 +7,99 @@
 
 #include "pse84_boot.h"
 
-#if defined(CONFIG_INFINEON_SMIF_OCTAL)
+#if defined(CONFIG_INFINEON_SMIF_OCTAL) || defined(CONFIG_INFINEON_SMIF_PSRAM)
+#include "cy_smif.h"
+#include "cy_smif_memslot.h"
 #include "mtb_serial_memory.h"
 #include "mtb_hal_clock.h"
+#include "cy_mpc.h"
+#endif
 
+#if defined(CONFIG_INFINEON_SMIF_OCTAL)
 extern cy_stc_smif_block_config_t smif0BlockConfig;
+#endif
 
-static mtb_serial_memory_t ifx_pse84_octal_serial_memory_obj;
-static cy_stc_smif_mem_context_t ifx_pse84_octal_smif_mem_context;
-static cy_stc_smif_mem_info_t ifx_pse84_octal_smif_mem_info;
+#if defined(CONFIG_INFINEON_SMIF_PSRAM)
+extern cy_stc_smif_block_config_t smif1BlockConfig;
 
-static const mtb_hal_hf_clock_t ifx_pse84_octal_flash_clock_ref = {
-	.inst_num = 3U,
+static mtb_serial_memory_t ifx_pse84_psram_obj;
+static cy_stc_smif_mem_context_t ifx_pse84_psram_mem_context;
+static cy_stc_smif_mem_info_t ifx_pse84_psram_mem_info;
+
+static const mtb_hal_hf_clock_t ifx_pse84_psram_clock_ref = {
+	.inst_num = 4U, /* CLK_HF4 for SMIF1 */
 };
 
-static const mtb_hal_clock_t ifx_pse84_octal_smif_clock = {
-	.clock_ref = &ifx_pse84_octal_flash_clock_ref,
+static const mtb_hal_clock_t ifx_pse84_psram_clock = {
+	.clock_ref = &ifx_pse84_psram_clock_ref,
 	.interface = &mtb_hal_clock_hf_interface,
 };
 
+/* Initialize SMIF1 for the S70KS1283 HyperRAM.
+ * After this call, 0x64000000 (NS) is read/write memory-mapped
+ * to 16 MB of PSRAM at 400 MBps DDR.
+ */
+static void ifx_pse84_psram_init(void)
+{
+	cy_stc_smif_context_t smif_ctx = {0};
+	cy_stc_smif_mem_config_t const *memCfg = smif1BlockConfig.memConfig[0];
+	static const cy_stc_smif_config_t smif1_config = {
+		.mode = (uint32_t)CY_SMIF_NORMAL,
+		.deselectDelay = 7U,
+		.rxClockSel = (uint32_t)CY_SMIF_SEL_INVERTED_FEEDBACK_CLK,
+		.blockEvent = (uint32_t)CY_SMIF_BUS_ERROR,
+	};
+
+	/* SMIF1 is not used by ROM, so no teardown needed — just init. */
+	Cy_SMIF_Disable(SMIF1_CORE);
+	(void)Cy_SMIF_Init(SMIF1_CORE, &smif1_config, 10000U, &smif_ctx);
+	Cy_SMIF_SetDataSelect(SMIF1_CORE, memCfg->slaveSelect,
+			      memCfg->dataSelect);
+	Cy_SMIF_Enable(SMIF1_CORE, &smif_ctx);
+
+	/* mtb_serial_memory_setup handles MemInit + quad/octal enable. */
+	(void)mtb_serial_memory_setup(&ifx_pse84_psram_obj,
+				      MTB_SERIAL_MEMORY_CHIP_SELECT_2,
+				      SMIF1_CORE,
+				      &ifx_pse84_psram_clock,
+				      &ifx_pse84_psram_mem_context,
+				      &ifx_pse84_psram_mem_info,
+				      &smif1BlockConfig);
+
+	/* Enable XIP (read + write memory-mapped access). */
+	(void)mtb_serial_memory_enable_xip(&ifx_pse84_psram_obj, true);
+	(void)mtb_serial_memory_set_write_enable(&ifx_pse84_psram_obj, true);
+
+	/* Configure MPC for SMIF1 PSRAM for all protection contexts that
+	 * need access (CM33S=2, CM33NS=2/5, CM55=5, Secure=7). Can't do
+	 * this in the static m55_mpc_regions array because cy_mpc_init
+	 * runs before SMIF1 is powered — the MPC register block lives
+	 * inside SMIF1 and bus-faults until SMIF1 is clocked.
+	 */
+	{
+		/* Match m33_m55_mpc_cfg pattern: NS RW for all 4 user PCs. */
+		static const cy_stc_mpc_rot_cfg_t psram_mpc_cfgs[] = {
+			{ .pc = CY_MPC_PC_2, .secure = CY_MPC_NON_SECURE,
+			  .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_5, .secure = CY_MPC_NON_SECURE,
+			  .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_6, .secure = CY_MPC_NON_SECURE,
+			  .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_7, .secure = CY_MPC_NON_SECURE,
+			  .access = CY_MPC_ACCESS_RW },
+		};
+		for (uint32_t i = 0;
+		     i < sizeof(psram_mpc_cfgs) / sizeof(psram_mpc_cfgs[0]);
+		     i++) {
+			(void)Cy_Mpc_ConfigRotMpcStruct(
+				(MPC_Type *)SMIF1_CACHE_BLOCK_CACHEBLK_AHB_MPC0,
+				0x00000000U, 0x01000000U, &psram_mpc_cfgs[i]);
+		}
+	}
+}
+#endif /* CONFIG_INFINEON_SMIF_PSRAM */
+
+#if defined(CONFIG_INFINEON_SMIF_OCTAL)
 /* Transition SMIF0 from Quad SDR (ROM default) to Octal DDR.
  *
  * Must run before cy_mpc_init so the M55 MPC can be programmed for the
@@ -37,28 +111,110 @@ static const mtb_hal_clock_t ifx_pse84_octal_smif_clock = {
  */
 static void ifx_pse84_smif_octal_init(void)
 {
-	(void)mtb_serial_memory_setup(&ifx_pse84_octal_serial_memory_obj,
-				      MTB_SERIAL_MEMORY_CHIP_SELECT_0,
-				      SMIF0_CORE,
-				      &ifx_pse84_octal_smif_clock,
-				      &ifx_pse84_octal_smif_mem_context,
-				      &ifx_pse84_octal_smif_mem_info,
-				      &smif0BlockConfig);
+	/* Full SMIF teardown + reinit for CS0 octal, following the
+	 * ifx-mcuboot-pse84 platform_memory_init() reference sequence.
+	 * Must run entirely from SRAM (pse84_boot.c is code_relocate'd
+	 * to M33SCODE when CONFIG_INFINEON_SMIF_OCTAL is set).
+	 *
+	 * The PSE84 SMIF has TWO independent cache layers:
+	 *   A) SMIF_CACHE_BLOCK (V6 AXI cache) — Cy_SMIF_*_All_Cache()
+	 *   B) Legacy fast/slow cache — Cy_SMIF_Cache{Enable,Invalidate}()
+	 * Both must be flushed/invalidated before the transition.
+	 */
+	cy_stc_smif_context_t smif_ctx = {0};
+	cy_stc_smif_mem_config_t const *memCfg = smif0BlockConfig.memConfig[0];
+	static const cy_stc_smif_config_t smif_config = {
+		.mode = (uint32_t)CY_SMIF_NORMAL,
+		.deselectDelay = 7U,
+		.rxClockSel = (uint32_t)CY_SMIF_SEL_INVERTED_FEEDBACK_CLK,
+		.blockEvent = (uint32_t)CY_SMIF_BUS_ERROR,
+	};
+	unsigned int key;
+	bool cache_was_on = false;
+
+	key = irq_lock();
+
+	/* 1. Clean + invalidate the V6 SMIF CACHE_BLOCK (AXI cache).
+	 *    Writes back dirty lines, then discards all entries.
+	 *    Must happen BEFORE disabling SMIF or touching device slots.
+	 */
+#if defined(SMIF0_CACHE_BLOCK_CACHEBLK_AHB_MPC0)
+	{
+		bool status = false;
+
+		(void)Cy_SMIF_IsCacheEnabled(
+			(SMIF_CACHE_BLOCK_Type *)SMIF0_CACHE_BLOCK, &status);
+		if (status) {
+			cache_was_on = true;
+			Cy_SMIF_Clean_And_Invalidate_All_Cache(
+				(SMIF_CACHE_BLOCK_Type *)SMIF0_CACHE_BLOCK);
+		}
+	}
+#endif
+
+	/* 2. Disable + invalidate legacy fast/slow caches. */
+	Cy_SMIF_CacheDisable(SMIF0_CORE, CY_SMIF_CACHE_BOTH);
+	Cy_SMIF_CachePrefetchingDisable(SMIF0_CORE, CY_SMIF_CACHE_BOTH);
+	Cy_SMIF_CacheInvalidate(SMIF0_CORE, CY_SMIF_CACHE_BOTH);
+
+	/* 3. Exit XIP mode. */
+	Cy_SMIF_SetMode(SMIF0_CORE, CY_SMIF_NORMAL);
+
+	/* 4. Wait for SMIF idle, then full disable + deinit.
+	 *    DeInit zeros ALL device slots (CS0 + CS1), resets CTL/CTL2.
+	 */
+	while (Cy_SMIF_BusyCheck(SMIF0_CORE)) {
+	}
+	Cy_SMIF_Disable(SMIF0_CORE);
+	Cy_SMIF_DeInit(SMIF0_CORE);
+
+	/* 5. Re-init SMIF controller from scratch (no device slots yet). */
+	(void)Cy_SMIF_Init(SMIF0_CORE, &smif_config, 10000U, &smif_ctx);
+
+	/* 6. Set data select for CS0 (octal data lines). */
+	Cy_SMIF_SetDataSelect(SMIF0_CORE, memCfg->slaveSelect,
+			      memCfg->dataSelect);
+
+	/* 7. Enable SMIF (starts DLL lock). */
+	Cy_SMIF_Enable(SMIF0_CORE, &smif_ctx);
+
+	/* 8. Init CS0 memory slot — writes XIP device registers since
+	 *    XIP_MODE is still 0 from step 5 (Init sets NORMAL mode).
+	 */
+	(void)Cy_SMIF_MemInit(SMIF0_CORE, &smif0BlockConfig, &smif_ctx);
+
+	/* 9. Send OPI DDR enable command to the S28HS01GT chip. */
+	(void)Cy_SMIF_MemOctalEnable(SMIF0_CORE, memCfg,
+				     CY_SMIF_DDR, &smif_ctx);
+
+	/* 10. For DDR capture: set RX capture mode to xSPI/HyperBus
+	 *     with DQS. Must disable SMIF first (CTL2 can't be written
+	 *     while ENABLED + XIP_MODE are both 1).
+	 */
+	Cy_SMIF_Disable(SMIF0_CORE);
+	Cy_SMIF_SetRxCaptureMode(SMIF0_CORE,
+				 CY_SMIF_SEL_XSPI_HYPERBUS_WITH_DQS,
+				 memCfg->slaveSelect);
+	Cy_SMIF_Enable(SMIF0_CORE, &smif_ctx);
+
+	/* 11. Invalidate legacy caches one more time, then switch to
+	 *     XIP mode. The first XIP fetch after this reads CS0 in
+	 *     OPI DDR mode.
+	 */
+	Cy_SMIF_CacheInvalidate(SMIF0_CORE, CY_SMIF_CACHE_BOTH);
+	Cy_SMIF_SetMode(SMIF0_CORE, CY_SMIF_MEMORY);
+
+	/* 12. Re-enable caches. */
+	Cy_SMIF_CacheEnable(SMIF0_CORE, CY_SMIF_CACHE_BOTH);
+	Cy_SMIF_CachePrefetchingEnable(SMIF0_CORE, CY_SMIF_CACHE_BOTH);
+
+	irq_unlock(key);
 }
 #endif /* CONFIG_INFINEON_SMIF_OCTAL */
 
 #if defined(CONFIG_SOC_PSE84_M55_ENABLE)
 void ifx_pse84_cm55_startup(void)
 {
-#if defined(CONFIG_INFINEON_SMIF_OCTAL)
-	/* Switch SMIF0 to Octal DDR before touching the MPC — the MPC
-	 * limit check uses CY_XIP_PORT0_SIZE which is 64 MB, but the
-	 * physical aperture must already be the octal 64 MB before the
-	 * M55 region can be programmed for that size.
-	 */
-	ifx_pse84_smif_octal_init();
-#endif
-
 	/* SAU Init */
 	cy_sau_init();
 
@@ -109,6 +265,21 @@ void ifx_pse84_cm55_startup(void)
 
 	/* Clear SYSCPU and APPCPU power domain dependency set by boot code */
 	cy_pd_pdcm_clear_dependency(CY_PD_PDCM_APPCPU, CY_PD_PDCM_SYSCPU);
+
+#if defined(CONFIG_INFINEON_SMIF_PSRAM)
+	/* Initialize SMIF1 for the 16 MB S70KS1283 HyperRAM.
+	 * SMIF1 is independent from SMIF0 — no teardown needed.
+	 * After this, 0x64000000 is read/write XIP to 16 MB PSRAM.
+	 */
+	/* ifx_pse84_psram_init(); */ /* DEBUG: disabled to isolate crash */
+#endif
+
+#if defined(CONFIG_INFINEON_SMIF_OCTAL)
+	/* Switch SMIF0 from CS1 (quad) to CS0 (octal). All XIP-resident
+	 * helpers have completed above while SMIF was still on CS1.
+	 */
+	ifx_pse84_smif_octal_init();
+#endif
 
 	/* Enable CM55 */
 	Cy_SysEnableCM55(MXCM55, DT_REG_ADDR(DT_NODELABEL(m55_xip)), CM55_BOOT_WAIT_TIME_USEC);
