@@ -148,16 +148,33 @@ const cy_stc_mpc_regions_t m33_mpc_regions[] = {
 	},
 };
 
+/* Octal SMIF aperture is 64 MB (CY_XIP_PORT0_SIZE). The MPC has an
+ * off-by-one bug at the exact boundary (offset + size == maxSize
+ * triggers a cascading vector-table HardFault); cap at 58 MB to stay
+ * comfortably under the wall while still covering the useful range
+ * (m33s_xip/m33_xip/m55_xip + a lot of growing room).
+ *
+ * The default Quad SDR aperture is only 16 MB so the plain 11 MB
+ * region is still correct in that configuration.
+ */
 const cy_stc_mpc_regions_t m55_mpc_regions[] = {
 	{
 		.base = (MPC_Type *)SMIF0_CACHE_BLOCK_CACHEBLK_AHB_MPC0,
 		.offset = 0x00500000,
+#if defined(CONFIG_INFINEON_SMIF_OCTAL)
+		.size = 0x03A00000,
+#else
 		.size = 0x00B00000,
+#endif
 	},
 	{
 		.base = (MPC_Type *)SMIF0_CORE_AXI_MPC0,
 		.offset = 0x00500000,
+#if defined(CONFIG_INFINEON_SMIF_OCTAL)
+		.size = 0x03A00000,
+#else
 		.size = 0x00B00000,
+#endif
 	},
 	{
 		.base = (MPC_Type *)SOCMEM_SRAM_MPC0,

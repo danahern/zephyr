@@ -135,6 +135,7 @@ config USE_INFINEON_SMIF
 config INFINEON_SMIF_OCTAL
 	bool "Use Infineon SEMPER Octal NOR flash (PSE84 only)"
 	depends on SOC_SERIES_PSE84
+	select USE_INFINEON_SMIF
 	help
 	  Route SMIF0 on KIT_PSE84_EVAL through the 128 MB Infineon SEMPER
 	  S28HS01GTGZBHI030 Octal NOR flash on chip-select 0 in OPI DDR mode

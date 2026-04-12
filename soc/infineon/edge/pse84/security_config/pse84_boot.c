@@ -7,9 +7,58 @@
 
 #include "pse84_boot.h"
 
+#if defined(CONFIG_INFINEON_SMIF_OCTAL)
+#include "mtb_serial_memory.h"
+#include "mtb_hal_clock.h"
+
+extern cy_stc_smif_block_config_t smif0BlockConfig;
+
+static mtb_serial_memory_t ifx_pse84_octal_serial_memory_obj;
+static cy_stc_smif_mem_context_t ifx_pse84_octal_smif_mem_context;
+static cy_stc_smif_mem_info_t ifx_pse84_octal_smif_mem_info;
+
+static const mtb_hal_hf_clock_t ifx_pse84_octal_flash_clock_ref = {
+	.inst_num = 3U,
+};
+
+static const mtb_hal_clock_t ifx_pse84_octal_smif_clock = {
+	.clock_ref = &ifx_pse84_octal_flash_clock_ref,
+	.interface = &mtb_hal_clock_hf_interface,
+};
+
+/* Transition SMIF0 from Quad SDR (ROM default) to Octal DDR.
+ *
+ * Must run before cy_mpc_init so the M55 MPC can be programmed for the
+ * octal 64 MB aperture. The whole call chain down through
+ * mtb_serial_memory_setup -> Cy_SMIF_MemInit -> Cy_SMIF_MemOctalEnable
+ * writes SMIF and chip registers; those writes briefly put SMIF into
+ * MMIO mode where XIP fetches would return garbage. pse84_boot.c and
+ * mtb_serial_memory.c are both relocated to SRAM to cover the window.
+ */
+static void ifx_pse84_smif_octal_init(void)
+{
+	(void)mtb_serial_memory_setup(&ifx_pse84_octal_serial_memory_obj,
+				      MTB_SERIAL_MEMORY_CHIP_SELECT_0,
+				      SMIF0_CORE,
+				      &ifx_pse84_octal_smif_clock,
+				      &ifx_pse84_octal_smif_mem_context,
+				      &ifx_pse84_octal_smif_mem_info,
+				      &smif0BlockConfig);
+}
+#endif /* CONFIG_INFINEON_SMIF_OCTAL */
+
 #if defined(CONFIG_SOC_PSE84_M55_ENABLE)
 void ifx_pse84_cm55_startup(void)
 {
+#if defined(CONFIG_INFINEON_SMIF_OCTAL)
+	/* Switch SMIF0 to Octal DDR before touching the MPC — the MPC
+	 * limit check uses CY_XIP_PORT0_SIZE which is 64 MB, but the
+	 * physical aperture must already be the octal 64 MB before the
+	 * M55 region can be programmed for that size.
+	 */
+	ifx_pse84_smif_octal_init();
+#endif
+
 	/* SAU Init */
 	cy_sau_init();
 

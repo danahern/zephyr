@@ -26,6 +26,22 @@ endif()
 zephyr_include_directories(security_config)
 zephyr_sources(security_config/pse84_boot.c)
 
+# Relocate pse84_boot.c to SRAM when Octal SMIF is selected. The startup hook
+# calls Cy_SMIF_MemInit to transition SMIF0 from Quad to Octal mode; that
+# transient makes XIP fetches unreliable, so the caller has to live in SRAM
+# too (the PDL's cy_smif*.c files are already relocated via hal_infineon).
+if(CONFIG_INFINEON_SMIF_OCTAL)
+  if(CONFIG_CPU_CORTEX_M33 AND CONFIG_TRUSTED_EXECUTION_SECURE)
+    set(ifx_pse84_sram_code M33SCODE)
+  elseif(CONFIG_CPU_CORTEX_M33)
+    set(ifx_pse84_sram_code M33CODE)
+  else()
+    set(ifx_pse84_sram_code ITCM)
+  endif()
+  zephyr_code_relocate(FILES security_config/pse84_boot.c
+                       LOCATION ${ifx_pse84_sram_code})
+endif()
+
 zephyr_sources(mpu_regions.c)
 
 zephyr_sources_ifdef(CONFIG_PM power.c)
