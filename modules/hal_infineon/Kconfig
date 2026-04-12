@@ -132,6 +132,28 @@ config USE_INFINEON_SMIF
 	help
 	  Enable SMIF HAL driver for Infineon devices
 
+config INFINEON_SMIF_OCTAL
+	bool "Use Infineon SEMPER Octal NOR flash (PSE84 only)"
+	depends on SOC_SERIES_PSE84
+	help
+	  Route SMIF0 on KIT_PSE84_EVAL through the 128 MB Infineon SEMPER
+	  S28HS01GTGZBHI030 Octal NOR flash on chip-select 0 in OPI DDR mode
+	  instead of the default 16 MB S25FS128S Quad NOR on chip-select 1.
+	  This selects the alternate cycfg_qspi_memslot_octal.c file (emitted
+	  by the ModusToolbox QSPI Configurator with the pre-canned
+	  "Octal DDR Hybrid at Bottom 25 MHz" preset) and changes the flash
+	  base address layout to match the octal 64 MB per-aperture SMIF0 map.
+
+	  The Octal and Quad flashes on this board share DQ0..3 so only one
+	  can be electrically active at a time — selecting this symbol
+	  commits the whole boot chain (storage, m33s_xip, m33_xip, m55_xip)
+	  to the octal chip.
+
+	  EXPERIMENTAL — boot-from-octal requires the M33 secure image to
+	  reconfigure SMIF from the ROM-default mode to OPI DDR during its
+	  own early init, from SRAM-resident code. See the octal enablement
+	  plan at zephyr_workspace/PSE84_OCTAL_FLASH_ENABLEMENT_PLAN.md.
+
 endif # SOC_FAMILY_INFINEON_CAT1 || SOC_FAMILY_INFINEON_EDGE || SOC_FAMILY_PSOC6_LEGACY || SOC_FAMILY_INFINEON_PSOC4
 
 config USE_INFINEON_ABSTRACTION_RTOS
