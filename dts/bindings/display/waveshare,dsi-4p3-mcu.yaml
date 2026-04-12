@@ -39,5 +39,8 @@ properties:
 
   default-brightness:
     type: int
-    default: 255
-    description: Brightness value written to 0x86 during init (0..255).
+    default: 128
+    description: |
+      Brightness value written to 0x86 during init (0..255).
+      Defaults to 128 (50%) — a safer baseline for LCD longevity and
+      glare than full 255. Override in a board overlay for other values.
