@@ -70,6 +70,14 @@ static const struct arm_mpu_region mpu_regions[] = {
 			DT_NODELABEL(dtcm)),
 			DT_REG_SIZE(DT_NODELABEL(dtcm)))),
 #endif
+
+#if defined(CONFIG_INFINEON_SMIF_PSRAM)
+	/* SMIF1 HyperRAM XIP aperture: 16 MB at 0x64000000 (NS). */
+	MPU_REGION_ENTRY(
+		"PSRAM",
+		0x64000000,
+		REGION_RAM_ATTR(0x64000000, 0x01000000)),
+#endif
 };
 
 const struct arm_mpu_config mpu_config = {

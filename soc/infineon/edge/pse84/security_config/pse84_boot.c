@@ -50,25 +50,68 @@ static void ifx_pse84_psram_init(void)
 		.blockEvent = (uint32_t)CY_SMIF_BUS_ERROR,
 	};
 
+	/* Initialize SMIF1 AXI CACHE_BLOCK with a cacheable region for the
+	 * 16 MB PSRAM aperture. Must happen BEFORE SMIF init per the
+	 * mtb-example-psoc-edge-psram-xip reference flow.
+	 */
+	{
+		static const cy_stc_smif_cache_config_t psram_cache_cfg = {
+			.enabled = true,
+			.cache_retention_on = true,
+			.cache_region_0 = {
+				.enabled = true,
+				.start_address = 0x64000000U,
+				.end_address = 0x64000000U + 0x01000000U,
+				.cache_attributes = CY_SMIF_CACHEABLE_WB_RWA,
+			},
+		};
+		(void)Cy_SMIF_InitCache(
+			(SMIF_CACHE_BLOCK_Type *)SMIF1_CACHE_BLOCK,
+			&psram_cache_cfg);
+	}
+
 	/* SMIF1 is not used by ROM, so no teardown needed — just init. */
 	Cy_SMIF_Disable(SMIF1_CORE);
 	(void)Cy_SMIF_Init(SMIF1_CORE, &smif1_config, 10000U, &smif_ctx);
 	Cy_SMIF_SetDataSelect(SMIF1_CORE, memCfg->slaveSelect,
 			      memCfg->dataSelect);
+
+	/* HyperRAM requires xSPI HyperBUS RX capture mode (with DQS).
+	 * Must be set while SMIF is disabled (CTL2 read-only while enabled).
+	 */
+	Cy_SMIF_SetRxCaptureMode(SMIF1_CORE,
+				 CY_SMIF_SEL_XSPI_HYPERBUS_WITH_DQS,
+				 memCfg->slaveSelect);
 	Cy_SMIF_Enable(SMIF1_CORE, &smif_ctx);
 
-	/* mtb_serial_memory_setup handles MemInit + quad/octal enable. */
-	(void)mtb_serial_memory_setup(&ifx_pse84_psram_obj,
-				      MTB_SERIAL_MEMORY_CHIP_SELECT_2,
-				      SMIF1_CORE,
-				      &ifx_pse84_psram_clock,
-				      &ifx_pse84_psram_mem_context,
-				      &ifx_pse84_psram_mem_info,
-				      &smif1BlockConfig);
+	/* Build a HyperBUS memslot config. The Configurator-generated cycfg
+	 * describes the chip as OPI DDR (xSPI Profile 1.0), but the S70KS1283
+	 * boots in HyperBUS protocol — we have to program the XIP controller
+	 * for HyperBUS, not OPI, or reads/writes return garbage.
+	 */
+	static cy_stc_smif_hbmem_device_config_t psram_hb_cfg = {
+		.xipReadCmd = CY_SMIF_HB_READ_CONTINUOUS_BURST,
+		.xipWriteCmd = CY_SMIF_HB_WRITE_CONTINUOUS_BURST,
+		.hbDevType = CY_SMIF_HB_SRAM,
+		.memSize = CY_SMIF_DEVICE_16M_BYTE,
+		.dummyCycles = 6U, /* default latency for 200 MHz */
+	};
+	static cy_stc_smif_mem_config_t psram_hb_memCfg = {
+		.slaveSelect = CY_SMIF_SLAVE_SELECT_2,
+		.flags = CY_SMIF_FLAG_HYPERBUS_DEVICE |
+			 CY_SMIF_FLAG_MEMORY_MAPPED | CY_SMIF_FLAG_WR_EN,
+		.dataSelect = CY_SMIF_DATA_SEL0,
+		.baseAddress = 0x64000000U,
+		.memMappedSize = 0x1000000U,
+		.hbdeviceCfg = &psram_hb_cfg,
+	};
 
-	/* Enable XIP (read + write memory-mapped access). */
-	(void)mtb_serial_memory_enable_xip(&ifx_pse84_psram_obj, true);
-	(void)mtb_serial_memory_set_write_enable(&ifx_pse84_psram_obj, true);
+	(void)Cy_SMIF_HyperBus_InitDevice(SMIF1_CORE, &psram_hb_memCfg, &smif_ctx);
+
+	/* Put SMIF1 into XIP (memory-mapped) mode so 0x64000000 reads/writes
+	 * translate to HyperBUS transactions.
+	 */
+	Cy_SMIF_SetMode(SMIF1_CORE, CY_SMIF_MEMORY);
 
 	/* Configure MPC for SMIF1 PSRAM for all protection contexts that
 	 * need access (CM33S=2, CM33NS=2/5, CM55=5, Secure=7). Can't do
@@ -77,22 +120,27 @@ static void ifx_pse84_psram_init(void)
 	 * inside SMIF1 and bus-faults until SMIF1 is clocked.
 	 */
 	{
-		/* Match m33_m55_mpc_cfg pattern: NS RW for all 4 user PCs. */
+		/* Wide-open: NS RW for every PC (0-7), plus secure RW.
+		 * Narrow later once we know which PC M55 actually runs in.
+		 */
 		static const cy_stc_mpc_rot_cfg_t psram_mpc_cfgs[] = {
-			{ .pc = CY_MPC_PC_2, .secure = CY_MPC_NON_SECURE,
-			  .access = CY_MPC_ACCESS_RW },
-			{ .pc = CY_MPC_PC_5, .secure = CY_MPC_NON_SECURE,
-			  .access = CY_MPC_ACCESS_RW },
-			{ .pc = CY_MPC_PC_6, .secure = CY_MPC_NON_SECURE,
-			  .access = CY_MPC_ACCESS_RW },
-			{ .pc = CY_MPC_PC_7, .secure = CY_MPC_NON_SECURE,
-			  .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_0, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_1, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_2, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_3, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_4, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_5, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_6, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
+			{ .pc = CY_MPC_PC_7, .secure = CY_MPC_NON_SECURE, .access = CY_MPC_ACCESS_RW },
 		};
 		for (uint32_t i = 0;
 		     i < sizeof(psram_mpc_cfgs) / sizeof(psram_mpc_cfgs[0]);
 		     i++) {
 			(void)Cy_Mpc_ConfigRotMpcStruct(
 				(MPC_Type *)SMIF1_CACHE_BLOCK_CACHEBLK_AHB_MPC0,
+				0x00000000U, 0x01000000U, &psram_mpc_cfgs[i]);
+			(void)Cy_Mpc_ConfigRotMpcStruct(
+				(MPC_Type *)SMIF1_CORE_AXI_MPC0,
 				0x00000000U, 0x01000000U, &psram_mpc_cfgs[i]);
 		}
 	}
