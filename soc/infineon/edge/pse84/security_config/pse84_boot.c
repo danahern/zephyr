@@ -108,6 +108,27 @@ static void ifx_pse84_psram_init(void)
 
 	(void)Cy_SMIF_HyperBus_InitDevice(SMIF1_CORE, &psram_hb_memCfg, &smif_ctx);
 
+	/* Cypress PDL sets RD/WR_DUMMY_CTL.PRESENT2 = 1 (fixed latency).
+	 * S70KS1283 boots in *variable* initial latency mode — PSE84 arch
+	 * ref manual (§31.4.x) says PRESENT2 must be 2 for the XIP block
+	 * to emit the variable-latency marker in the TX command FIFO.
+	 * Without this, M55 AXI reads through the cache block bus-fault
+	 * even though M33 MMIO round-trips at 0x74000000 work.
+	 */
+	{
+		SMIF_DEVICE_Type volatile *dev =
+			Cy_SMIF_GetDeviceBySlot(SMIF1_CORE,
+						CY_SMIF_SLAVE_SELECT_2);
+		uint32_t rd = SMIF_DEVICE_RD_DUMMY_CTL(dev);
+		uint32_t wr = SMIF_DEVICE_WR_DUMMY_CTL(dev);
+		rd = (rd & ~SMIF_CORE_DEVICE_RD_DUMMY_CTL_PRESENT2_Msk) |
+		     (2UL << SMIF_CORE_DEVICE_RD_DUMMY_CTL_PRESENT2_Pos);
+		wr = (wr & ~SMIF_CORE_DEVICE_WR_DUMMY_CTL_PRESENT2_Msk) |
+		     (2UL << SMIF_CORE_DEVICE_WR_DUMMY_CTL_PRESENT2_Pos);
+		SMIF_DEVICE_RD_DUMMY_CTL(dev) = rd;
+		SMIF_DEVICE_WR_DUMMY_CTL(dev) = wr;
+	}
+
 	/* Put SMIF1 into XIP (memory-mapped) mode so 0x64000000 reads/writes
 	 * translate to HyperBUS transactions.
 	 */
