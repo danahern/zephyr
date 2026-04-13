@@ -20,29 +20,18 @@ extern cy_stc_smif_block_config_t smif0BlockConfig;
 #endif
 
 #if defined(CONFIG_INFINEON_SMIF_PSRAM)
-extern cy_stc_smif_block_config_t smif1BlockConfig;
-
-static mtb_serial_memory_t ifx_pse84_psram_obj;
-static cy_stc_smif_mem_context_t ifx_pse84_psram_mem_context;
-static cy_stc_smif_mem_info_t ifx_pse84_psram_mem_info;
-
-static const mtb_hal_hf_clock_t ifx_pse84_psram_clock_ref = {
-	.inst_num = 4U, /* CLK_HF4 for SMIF1 */
-};
-
-static const mtb_hal_clock_t ifx_pse84_psram_clock = {
-	.clock_ref = &ifx_pse84_psram_clock_ref,
-	.interface = &mtb_hal_clock_hf_interface,
-};
-
 /* Initialize SMIF1 for the S70KS1283 HyperRAM.
  * After this call, 0x64000000 (NS) is read/write memory-mapped
  * to 16 MB of PSRAM at 400 MBps DDR.
+ *
+ * Note: we don't depend on smif1BlockConfig from cycfg — the non-OCTAL
+ * cycfg stub has memConfig = NULL (defined in cycfg_qspi_memslot.c),
+ * and the OCTAL cycfg encodes the chip as OPI DDR which is wrong for
+ * HyperBUS. We build the HyperBUS memCfg locally below.
  */
 static void ifx_pse84_psram_init(void)
 {
 	cy_stc_smif_context_t smif_ctx = {0};
-	cy_stc_smif_mem_config_t const *memCfg = smif1BlockConfig.memConfig[0];
 	static const cy_stc_smif_config_t smif1_config = {
 		.mode = (uint32_t)CY_SMIF_NORMAL,
 		.deselectDelay = 7U,
@@ -53,15 +42,15 @@ static void ifx_pse84_psram_init(void)
 	/* SMIF1 is not used by ROM, so no teardown needed — just init. */
 	Cy_SMIF_Disable(SMIF1_CORE);
 	(void)Cy_SMIF_Init(SMIF1_CORE, &smif1_config, 10000U, &smif_ctx);
-	Cy_SMIF_SetDataSelect(SMIF1_CORE, memCfg->slaveSelect,
-			      memCfg->dataSelect);
+	Cy_SMIF_SetDataSelect(SMIF1_CORE, CY_SMIF_SLAVE_SELECT_2,
+			      CY_SMIF_DATA_SEL0);
 
 	/* HyperRAM requires xSPI HyperBUS RX capture mode (with DQS).
 	 * Must be set while SMIF is disabled (CTL2 read-only while enabled).
 	 */
 	Cy_SMIF_SetRxCaptureMode(SMIF1_CORE,
 				 CY_SMIF_SEL_XSPI_HYPERBUS_WITH_DQS,
-				 memCfg->slaveSelect);
+				 CY_SMIF_SLAVE_SELECT_2);
 	Cy_SMIF_Enable(SMIF1_CORE, &smif_ctx);
 
 	/* Build a HyperBUS memslot config. The Configurator-generated cycfg
@@ -168,6 +157,20 @@ static void ifx_pse84_psram_init(void)
 				(MPC_Type *)SMIF1_CORE_AXI_MPC0,
 				0x00000000U, 0x01000000U, &psram_mpc_cfgs[i]);
 		}
+	}
+
+	/* M33 Secure self-test: write/read canary at 0x74000000 (PSRAM secure
+	 * alias). If this faults, M33 handler will print via UART and we'll
+	 * see it. If it succeeds, init just returns and M55 gets to run.
+	 * Result isn't shared with M55 — we rely on the observation of what
+	 * happens here (UART crash dump vs. clean return).
+	 */
+	{
+		volatile uint32_t *psram_s = (volatile uint32_t *)0x74000000U;
+		(void)psram_s[0];
+		psram_s[0] = 0xCAFEBABEU;
+		(void)psram_s[0];
+		__DSB();
 	}
 }
 #endif /* CONFIG_INFINEON_SMIF_PSRAM */
@@ -344,7 +347,7 @@ void ifx_pse84_cm55_startup(void)
 	 * SMIF1 is independent from SMIF0 — no teardown needed.
 	 * After this, 0x64000000 is read/write XIP to 16 MB PSRAM.
 	 */
-	/* ifx_pse84_psram_init(); */ /* DEBUG: disabled to isolate crash */
+	ifx_pse84_psram_init();
 #endif
 
 #if defined(CONFIG_INFINEON_SMIF_OCTAL)
