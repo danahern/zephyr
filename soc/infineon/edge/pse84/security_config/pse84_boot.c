@@ -50,26 +50,6 @@ static void ifx_pse84_psram_init(void)
 		.blockEvent = (uint32_t)CY_SMIF_BUS_ERROR,
 	};
 
-	/* Initialize SMIF1 AXI CACHE_BLOCK with a cacheable region for the
-	 * 16 MB PSRAM aperture. Must happen BEFORE SMIF init per the
-	 * mtb-example-psoc-edge-psram-xip reference flow.
-	 */
-	{
-		static const cy_stc_smif_cache_config_t psram_cache_cfg = {
-			.enabled = true,
-			.cache_retention_on = true,
-			.cache_region_0 = {
-				.enabled = true,
-				.start_address = 0x64000000U,
-				.end_address = 0x64000000U + 0x01000000U,
-				.cache_attributes = CY_SMIF_CACHEABLE_WB_RWA,
-			},
-		};
-		(void)Cy_SMIF_InitCache(
-			(SMIF_CACHE_BLOCK_Type *)SMIF1_CACHE_BLOCK,
-			&psram_cache_cfg);
-	}
-
 	/* SMIF1 is not used by ROM, so no teardown needed — just init. */
 	Cy_SMIF_Disable(SMIF1_CORE);
 	(void)Cy_SMIF_Init(SMIF1_CORE, &smif1_config, 10000U, &smif_ctx);
@@ -133,6 +113,30 @@ static void ifx_pse84_psram_init(void)
 	 * translate to HyperBUS transactions.
 	 */
 	Cy_SMIF_SetMode(SMIF1_CORE, CY_SMIF_MEMORY);
+
+	/* Program the SMIF1 cache block region 0 for the 16 MB HyperRAM
+	 * aperture AFTER XIP is live. CM55 M-AXI reads traverse the cache
+	 * block; if no region covers the transaction address, reads are
+	 * forwarded non-cacheable and HyperBUS passthrough bus-errors.
+	 * Registers per PSE84 register ref manual §SMIF_CACHE_BLOCK.MMIO.
+	 * Using write-through read/write-allocate — write-back caching of
+	 * HyperRAM isn't necessary and keeps the coherency story simpler.
+	 */
+	{
+		static const cy_stc_smif_cache_config_t psram_cache_cfg = {
+			.enabled = true,
+			.cache_retention_on = true,
+			.cache_region_0 = {
+				.enabled = true,
+				.start_address = 0x64000000U,
+				.end_address = 0x64000000U + 0x01000000U,
+				.cache_attributes = CY_SMIF_CACHEABLE_WT_RWA,
+			},
+		};
+		(void)Cy_SMIF_InitCache(
+			(SMIF_CACHE_BLOCK_Type *)SMIF1_CACHE_BLOCK,
+			&psram_cache_cfg);
+	}
 
 	/* Configure MPC for SMIF1 PSRAM for all protection contexts that
 	 * need access (CM33S=2, CM33NS=2/5, CM55=5, Secure=7). Can't do
