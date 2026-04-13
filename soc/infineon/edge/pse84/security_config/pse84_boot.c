@@ -20,14 +20,68 @@ extern cy_stc_smif_block_config_t smif0BlockConfig;
 #endif
 
 #if defined(CONFIG_INFINEON_SMIF_PSRAM)
-/* Initialize SMIF1 for the S70KS1283 HyperRAM.
- * After this call, 0x64000000 (NS) is read/write memory-mapped
- * to 16 MB of PSRAM at 400 MBps DDR.
+/* State for mtb_serial_memory_setup. Kept static so the lib's async paths
+ * can dereference them for the life of the program.
+ */
+static mtb_serial_memory_t ifx_pse84_psram_obj;
+static cy_stc_smif_mem_context_t ifx_pse84_psram_mem_context;
+static cy_stc_smif_mem_info_t ifx_pse84_psram_mem_info;
+
+/* CLK_HF4 drives SMIF1 peripheral clock on PSE84. mtb_serial_memory_setup
+ * divides this to decide SFDP-probe frequency; a NULL clock would trigger
+ * an ASSERT inside the library.
+ */
+static const mtb_hal_hf_clock_t ifx_pse84_psram_clock_ref = {
+	.inst_num = 4U, /* CLK_HF4 */
+};
+static const mtb_hal_clock_t ifx_pse84_psram_clock = {
+	.clock_ref = &ifx_pse84_psram_clock_ref,
+	.interface = &mtb_hal_clock_hf_interface,
+};
+
+/* Hand-built HyperBUS memslot for the S70KS1283. The Zephyr cycfg's
+ * smif1BlockConfig is either NULL (non-OCTAL stub) or OPI DDR (OCTAL
+ * variant, wrong protocol for this HyperBUS-boot-mode chip), so we build
+ * the block_config locally and feed it to mtb_serial_memory_setup.
+ */
+static cy_stc_smif_hbmem_device_config_t ifx_pse84_psram_hb_cfg = {
+	.xipReadCmd = CY_SMIF_HB_READ_CONTINUOUS_BURST,
+	.xipWriteCmd = CY_SMIF_HB_WRITE_CONTINUOUS_BURST,
+	.hbDevType = CY_SMIF_HB_SRAM,
+	.memSize = CY_SMIF_DEVICE_16M_BYTE,
+	.dummyCycles = 6U,
+};
+static cy_stc_smif_mem_config_t ifx_pse84_psram_memCfg = {
+	.slaveSelect = CY_SMIF_SLAVE_SELECT_2,
+	.flags = CY_SMIF_FLAG_HYPERBUS_DEVICE |
+		 CY_SMIF_FLAG_MEMORY_MAPPED | CY_SMIF_FLAG_WR_EN,
+	.dataSelect = CY_SMIF_DATA_SEL0,
+	.baseAddress = 0x64000000U,
+	.memMappedSize = 0x1000000U,
+	.hbdeviceCfg = &ifx_pse84_psram_hb_cfg,
+};
+static cy_stc_smif_mem_config_t *ifx_pse84_psram_memConfigs[1] = {
+	&ifx_pse84_psram_memCfg,
+};
+static const cy_stc_smif_block_config_t ifx_pse84_psram_blockCfg = {
+	.memCount = 1U,
+	.memConfig = ifx_pse84_psram_memConfigs,
+	.majorVersion = CY_SMIF_DRV_VERSION_MAJOR,
+	.minorVersion = CY_SMIF_DRV_VERSION_MINOR,
+};
+
+/* Initialize SMIF1 for the S70KS1283 HyperRAM via mtb_serial_memory_setup.
  *
- * Note: we don't depend on smif1BlockConfig from cycfg — the non-OCTAL
- * cycfg stub has memConfig = NULL (defined in cycfg_qspi_memslot.c),
- * and the OCTAL cycfg encodes the chip as OPI DDR which is wrong for
- * HyperBUS. We build the HyperBUS memCfg locally below.
+ * Prior iteration (commit bc3a58bfdb9) called Cy_SMIF_HyperBus_InitDevice
+ * directly — that hung M33 inside some downstream PDL call, leaving SMIF1
+ * stuck-busy and the chip SWD-unresponsive. The Infineon reference example
+ * (mtb-example-psoc-edge-psram-xip) uses mtb_serial_memory_setup, which
+ * internally handles RX capture mode switching, SFDP probe or HyperBUS
+ * direct init, and clock-aware dummy cycle programming. Routing through it
+ * removes whatever step in the manual sequence was wedging SMIF1.
+ *
+ * After this, 0x64000000 (NS) / 0x74000000 (Sec) is read/write memory-mapped
+ * to 16 MB of PSRAM at HyperBUS DDR speed.
  */
 static void ifx_pse84_psram_init(void)
 {
@@ -42,47 +96,28 @@ static void ifx_pse84_psram_init(void)
 	/* SMIF1 is not used by ROM, so no teardown needed — just init. */
 	Cy_SMIF_Disable(SMIF1_CORE);
 	(void)Cy_SMIF_Init(SMIF1_CORE, &smif1_config, 10000U, &smif_ctx);
-	Cy_SMIF_SetDataSelect(SMIF1_CORE, CY_SMIF_SLAVE_SELECT_2,
-			      CY_SMIF_DATA_SEL0);
-
-	/* HyperRAM requires xSPI HyperBUS RX capture mode (with DQS).
-	 * Must be set while SMIF is disabled (CTL2 read-only while enabled).
-	 */
-	Cy_SMIF_SetRxCaptureMode(SMIF1_CORE,
-				 CY_SMIF_SEL_XSPI_HYPERBUS_WITH_DQS,
-				 CY_SMIF_SLAVE_SELECT_2);
 	Cy_SMIF_Enable(SMIF1_CORE, &smif_ctx);
 
-	/* Build a HyperBUS memslot config. The Configurator-generated cycfg
-	 * describes the chip as OPI DDR (xSPI Profile 1.0), but the S70KS1283
-	 * boots in HyperBUS protocol — we have to program the XIP controller
-	 * for HyperBUS, not OPI, or reads/writes return garbage.
+	/* mtb_serial_memory_setup does:
+	 *  - Cy_SMIF_SetDataSelect for all memConfig[] entries
+	 *  - If DETECT_SFDP flag: temp-switch to NORMAL_SPI, run SFDP probe,
+	 *    program XIP registers based on probe result.
+	 *  - If HYPERBUS_DEVICE flag (no SFDP): call the HyperBus init path
+	 *    and set RX capture mode to XSPI_HYPERBUS_WITH_DQS.
+	 * We take the HYPERBUS_DEVICE path (ifx_pse84_psram_memCfg above).
 	 */
-	static cy_stc_smif_hbmem_device_config_t psram_hb_cfg = {
-		.xipReadCmd = CY_SMIF_HB_READ_CONTINUOUS_BURST,
-		.xipWriteCmd = CY_SMIF_HB_WRITE_CONTINUOUS_BURST,
-		.hbDevType = CY_SMIF_HB_SRAM,
-		.memSize = CY_SMIF_DEVICE_16M_BYTE,
-		.dummyCycles = 6U, /* default latency for 200 MHz */
-	};
-	static cy_stc_smif_mem_config_t psram_hb_memCfg = {
-		.slaveSelect = CY_SMIF_SLAVE_SELECT_2,
-		.flags = CY_SMIF_FLAG_HYPERBUS_DEVICE |
-			 CY_SMIF_FLAG_MEMORY_MAPPED | CY_SMIF_FLAG_WR_EN,
-		.dataSelect = CY_SMIF_DATA_SEL0,
-		.baseAddress = 0x64000000U,
-		.memMappedSize = 0x1000000U,
-		.hbdeviceCfg = &psram_hb_cfg,
-	};
+	(void)mtb_serial_memory_setup(&ifx_pse84_psram_obj,
+				      MTB_SERIAL_MEMORY_CHIP_SELECT_2,
+				      SMIF1_CORE,
+				      &ifx_pse84_psram_clock,
+				      &ifx_pse84_psram_mem_context,
+				      &ifx_pse84_psram_mem_info,
+				      &ifx_pse84_psram_blockCfg);
 
-	(void)Cy_SMIF_HyperBus_InitDevice(SMIF1_CORE, &psram_hb_memCfg, &smif_ctx);
-
-	/* Cypress PDL sets RD/WR_DUMMY_CTL.PRESENT2 = 1 (fixed latency).
-	 * S70KS1283 boots in *variable* initial latency mode — PSE84 arch
-	 * ref manual (§31.4.x) says PRESENT2 must be 2 for the XIP block
-	 * to emit the variable-latency marker in the TX command FIFO.
-	 * Without this, M55 AXI reads through the cache block bus-fault
-	 * even though M33 MMIO round-trips at 0x74000000 work.
+	/* Cypress PDL hardcodes RD/WR_DUMMY_CTL.PRESENT2 = 1 (fixed latency).
+	 * S70KS1283 boots in *variable* initial latency mode — PSE84 arch ref
+	 * manual §31.4.x says PRESENT2 must be 2 for the XIP block to emit the
+	 * variable-latency marker. Patch after setup returns.
 	 */
 	{
 		SMIF_DEVICE_Type volatile *dev =
