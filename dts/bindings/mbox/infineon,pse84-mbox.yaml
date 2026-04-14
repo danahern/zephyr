@@ -1,0 +1,90 @@
+# Copyright (c) 2026 PSE84 Voice Assistant contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Infineon PSE84 IPC-based mailbox controller.
+
+  Wraps the PSE84 ``Cy_IPC_Drv_*`` PDL channels exposed by the
+  ``m33syscpuss`` (IPC0) and ``m55appcpuss`` (IPC1) IP instances into
+  Zephyr's generic mbox driver API. Each DT instance owns one or two
+  PDL channel indices (one per direction). The mbox ``send()`` path
+  performs ``Acquire -> WriteData -> ReleaseNotify``; the matching
+  IPC_INTR_STRUCT release-notify NVIC line dispatches to a registered
+  callback with a ``uint32_t`` message (MTU = 4).
+
+  The ``reg`` cell names the IPC structure base address that this
+  instance targets — i.e. the base of the IPC0 or IPC1 register
+  window. Drivers resolve per-channel addresses at runtime via
+  ``Cy_IPC_Drv_GetIpcBaseAddress(channel)`` / ``GetIntrBaseAddr(intr)``
+  using the ``channels-used`` indices.
+
+  Channel selection rationale (Phase 0b voice-assistant IPC):
+
+  ``CY_IPC_CHAN_USER`` in the mtb-dsl-pse8xxgp PDL is defined as
+  ``(1u + CPUSS_IPC_NR)``, i.e. the first channel of the IPC1
+  (APPCPUSS) instance. That range is explicitly reserved by the SDK
+  for M33 <-> M55 application traffic. IPC0 channels 0/1 are used by
+  the PDL syscall/semaphore pipe; IPC0 channel 2 is
+  ``CY_IPC_CHAN_RRAM_LOCK``. We therefore pick ``CY_IPC_CHAN_USER``
+  (M33->M55 doorbell) and ``CY_IPC_CHAN_USER + 1`` (M55->M33 doorbell)
+  as the first two free user channels. Both live in the IPC1 register
+  window.
+
+  NVIC line mapping (from
+  zephyr_workspace/zephyrproject/modules/hal/infineon/mtb-template-pse8xxgp/files/devices/include/pse846gps2dbzc4a.h):
+
+    - ``m55appcpuss_interrupts_ipc_dpslp_0_IRQn`` = 46  (M55 target, IPC1)
+    - ``m55appcpuss_interrupts_ipc_dpslp_1_IRQn`` = 47  (M55 target, IPC1)
+    - ``m33syscpuss_interrupts_ipc_dpslp_0_IRQn`` =  1  (M33 target, IPC0, DeepSleep view)
+    - ``m33syscpuss_interrupts_ipc_dpslp_1_IRQn`` =  2  (M33 target, IPC0, DeepSleep view)
+
+  Lines 46/47 are the NVIC entries we pin for the M55 side of the
+  Phase 0b IPC. The matching M33 side reuses the same PDL channel
+  indices (which are hardware-global) and a free ``m33syscpuss``
+  IPC IRQ line from the same table — selected in the M33 overlay.
+
+compatible: "infineon,pse84-mbox"
+
+include: [base.yaml, mailbox-controller.yaml]
+
+properties:
+  reg:
+    required: true
+    description: |
+      IPC structure base address. This is the base of the IPC0 or
+      IPC1 register block that this instance targets. Used only for
+      DT completeness / matching; per-channel addresses come from the
+      PDL ``Cy_IPC_Drv_GetIpcBaseAddress(channel)`` helper.
+
+  interrupts:
+    required: true
+    description: |
+      NVIC line for the IPC release-notify interrupt targeted at
+      *this* core. Exactly one line per DT instance; the driver
+      clears the interrupt for every channel listed in
+      ``channels-used`` that is pending at ISR time.
+
+  channels-used:
+    type: array
+    required: true
+    description: |
+      Array of PDL channel indices owned by this mbox instance. Cell
+      N of an ``mboxes = <&m N>;`` reference selects the Nth entry of
+      this array. Indices are in PDL global-channel space (IPC0
+      channels first, then IPC1). For Phase 0b this array holds at
+      most 2 entries — one per direction. Entries must be in the
+      ``CY_IPC_CHAN_USER`` range (i.e. IPC1 user channels).
+
+  intr-index:
+    type: int
+    required: true
+    description: |
+      Global IPC_INTR_STRUCT index used for the release-notify event
+      on the receive side. Passed to
+      ``Cy_IPC_Drv_GetIntrBaseAddr()``.
+
+  "#mbox-cells":
+    const: 1
+
+mbox-cells:
+  - channel

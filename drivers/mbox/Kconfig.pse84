@@ -1,0 +1,11 @@
+# Copyright (c) 2026 PSE84 Voice Assistant contributors
+# SPDX-License-Identifier: Apache-2.0
+
+config MBOX_PSE84
+	bool "Infineon PSE84 IPC mailbox driver"
+	default y
+	depends on DT_HAS_INFINEON_PSE84_MBOX_ENABLED
+	help
+	  Driver for the Infineon PSE84 IPC mailbox, wrapping the
+	  Cy_IPC_Drv_* PDL primitives into Zephyr's mbox driver API.
+	  Phase 0b scaffolding for the M33 <-> M55 voice-assistant IPC.
