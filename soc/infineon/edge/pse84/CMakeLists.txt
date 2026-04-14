@@ -24,7 +24,16 @@ elseif(CONFIG_CPU_CORTEX_M55)
 endif()
 
 zephyr_include_directories(security_config)
-zephyr_sources(security_config/pse84_boot.c)
+
+# pse84_boot.c drives the Secure-side TrustZone partition setup, SMIF
+# mode transition, and CM55 release from CPU_WAIT. It pulls in
+# partition_ARMCM33.h which only exists for Secure builds, so gate it
+# on Secure M33 or the pure M55 companion (which doesn't go through
+# the TrustZone path but does reuse the SMIF helpers). In the M33NS
+# build TF-M owns the equivalent bring-up; we skip this file.
+if(NOT (CONFIG_CPU_CORTEX_M33 AND NOT CONFIG_TRUSTED_EXECUTION_SECURE))
+  zephyr_sources(security_config/pse84_boot.c)
+endif()
 
 # Relocate pse84_boot.c to SRAM when Octal SMIF is selected. The startup hook
 # calls Cy_SMIF_MemInit to transition SMIF0 from Quad to Octal mode; that

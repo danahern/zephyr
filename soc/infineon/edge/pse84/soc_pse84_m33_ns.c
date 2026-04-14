@@ -25,7 +25,9 @@ void soc_early_init_hook(void)
 
 void soc_late_init_hook(void)
 {
-#if defined(CONFIG_SOC_PSE84_M55_ENABLE)
-	ifx_pse84_cm55_startup();
-#endif
+	/*
+	 * In the NS build TF-M already handled TrustZone / PPC / MPC /
+	 * SMIF setup and released CM55 (unless IFX_HALT_CM55=1 in the
+	 * TF-M config). Nothing for Zephyr NS to do here.
+	 */
 }
