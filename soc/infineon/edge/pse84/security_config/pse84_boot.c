@@ -367,10 +367,29 @@ void ifx_pse84_cm55_startup(void)
 	cy_ppc1_init();
 
 #ifdef CONFIG_CORTEX_M_SYSTICK
-	sys_clock_disable();
+	/* Historical: systick was disabled here because the for(;;) spin
+	 * below made M33 inert post-handoff, and idle tick interrupts
+	 * were pointless. With the spin removed (below), we leave systick
+	 * intact so Zephyr's idle thread + any subsequent M33 application
+	 * work (BLE host, ipc_service peer) has a tick source. Apps that
+	 * don't want systick cost can still CONFIG_CORTEX_M_SYSTICK=n.
+	 */
 #endif
 
-	for (;;) {
-	}
+	/* Previously this function ended with an infinite spin, which
+	 * worked when the M33 companion was samples/basic/minimal with an
+	 * empty main(). Real M33 applications (e.g. pse84_assistant_m33)
+	 * need main() to actually run — which means returning from
+	 * soc_late_init_hook so Zephyr's scheduler can take over.
+	 *
+	 * Returning is safe because:
+	 *   - CM55 has already been enabled above.
+	 *   - PPC has been re-attributed, so M33 peripheral access follows
+	 *     the new NS policy.
+	 *   - __disable_irq() above protects the PPC reconfigure window
+	 *     from a stale-region vector fetch.
+	 * Apps that want the old park-forever behaviour can simply idle
+	 * their main thread; that's functionally equivalent.
+	 */
 }
 #endif
