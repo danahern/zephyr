@@ -340,6 +340,28 @@ void ifx_pse84_cm55_startup(void)
 	/* SoCMEM Idle Power Mode Configuration */
 	Cy_SysPm_SetSOCMEMDeepSleepMode(CY_SYSPM_MODE_DEEPSLEEP);
 
+	/* Disable Secure-world IRQs before re-attributing PPC regions.
+	 *
+	 * cy_ppc{0,1}_init() flip every PERI0/1 region to NS/NONPRIV.
+	 * With __enable_irq() armed at line 289 and M55 handed off at
+	 * Cy_SysEnableCM55() above, the M33 enters PPC re-attribution
+	 * with Secure IRQs live. The first IRQ whose vector table or
+	 * SCB state now sits behind a NS-only region takes a vector
+	 * fetch denied → HardFault with HFSR.VECTTBL asserted.
+	 *
+	 * M33 has no work to do after this point — it drops into the
+	 * for(;;) spin at the bottom of this function — so disabling
+	 * IRQs permanently here is a clean fix. See
+	 * zephyr_workspace/pse84_assistant/M33_HARDFAULT_RCA.md for the
+	 * full trace and alternative remediations considered.
+	 *
+	 * Touches every PSE84 app that uses enable_cm55 as a sysbuild
+	 * companion; verified on pse84_assistant (branch
+	 * pse84-voice-assistant) — the openocd "clearing lockup after
+	 * double fault" message at reset is gone.
+	 */
+	__disable_irq();
+
 	/* Configure PPC for NS*/
 	cy_ppc0_init();
 	cy_ppc1_init();
