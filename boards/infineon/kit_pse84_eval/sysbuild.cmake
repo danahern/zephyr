@@ -48,5 +48,12 @@ if(SB_CONFIG_BOARD_KIT_PSE84_EVAL_PSE846GPS2DBZC4A_M55)
     BOARD ${_m33_companion_board}
   )
 
-  set_config_bool(enable_cm55 CONFIG_SOC_PSE84_M55_ENABLE 1)
+  # Only force CM55 startup on the fallback (samples/basic/minimal)
+  # companion — that image literally has nothing else to do and needs
+  # ifx_pse84_cm55_startup() in soc_late_init_hook. For real app
+  # companions loaded from RRAM, extended-boot already ran CM55
+  # release and MPC init, so re-running it double-faults M33.
+  if(_m33_companion_source STREQUAL "${ZEPHYR_BASE}/samples/basic/minimal")
+    set_config_bool(enable_cm55 CONFIG_SOC_PSE84_M55_ENABLE 1)
+  endif()
 endif()
