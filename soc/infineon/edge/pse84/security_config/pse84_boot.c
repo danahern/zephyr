@@ -362,20 +362,9 @@ void ifx_pse84_cm55_startup(void)
 	 */
 	__disable_irq();
 
-	/* Configure PPC for NS — skipped when extended-boot already did
-	 * it (CONFIG_INFINEON_EXTENDED_BOOT_DID_PPC=y). Under the alt_boot
-	 * policy path on kit_pse84_eval, re-running cy_ppc_init bus-faults
-	 * on SCB Secure registers (observed BFAR=0x529a0000 on 2026-04-15).
-	 * Extended-boot's PPC attribution is already the "everything NS"
-	 * Zephyr wants; leaving it alone is the safe path. */
-#if !defined(CONFIG_INFINEON_EXTENDED_BOOT_DID_PPC)
+	/* Configure PPC for NS*/
 	cy_ppc0_init();
 	cy_ppc1_init();
-#endif
-
-	/* Re-enable IRQs disabled above so main() and Zephyr subsystems
-	 * (uart console, systick, ipc_service MBOX) can actually run. */
-	__enable_irq();
 
 #ifdef CONFIG_CORTEX_M_SYSTICK
 	/* Historical: systick was disabled here because the for(;;) spin
