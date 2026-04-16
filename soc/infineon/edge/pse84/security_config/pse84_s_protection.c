@@ -295,15 +295,6 @@ cy_rslt_t cy_ppc_unsecure_init(PPC_Type *base, cy_en_prot_region_t start, cy_en_
 		    region == PROT_PERI1_PPC1_PPC_PPC_NONSECURE) {
 			continue;
 		}
-		/* SCB2 is LOCK_MASK-locked by extended-boot (arch ref §15.4.3.1:
-		 * locked rows fault on NS_ATT writes). Skip so iteration continues
-		 * and configures SCB3..SCB11 + GFXSS peripherals. Without this,
-		 * cy_ppc_init bus-faults at SCB2 and everything after is
-		 * unattributed — which is why M55 rendered one frame but LVGL
-		 * animation timer + audio DMIC peripherals fault on access. */
-		if (region == PROT_PERI0_SCB2) {
-			continue;
-		}
 
 		cy_rslt_t r = Cy_Ppc_ConfigAttrib(base, region, &cycfg_unused_ppc_cfg);
 
