@@ -37,4 +37,15 @@ config SOC_PSE84_M55_ENABLE
 	help
 	  This option enables the m55 core on pse84, by m33 core.
 
+config INFINEON_EXTENDED_BOOT_DID_PPC
+	bool "Skip cy_ppc_init (extended boot already ran it)"
+	depends on SOC_PSE84_M55_ENABLE
+	help
+	  When the OEM policy's extended-boot has already attributed PPC
+	  regions (e.g. policy_oem_octal with oem_alt_boot=true on
+	  kit_pse84_eval), re-running cy_ppc0_init()/cy_ppc1_init() in
+	  ifx_pse84_cm55_startup bus-faults on SCB Secure registers
+	  (observed BFAR=0x529a0000 on 2026-04-15). Set y to skip and
+	  also re-enable IRQs after cy_mpc_init so main() can execute.
+
 endif # SOC_SERIES_PSE84_M33
