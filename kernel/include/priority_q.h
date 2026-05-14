@@ -27,14 +27,22 @@
 #define _priq_run_add		z_priq_rb_add
 #define _priq_run_remove	z_priq_rb_remove
 #define _priq_run_yield         z_priq_rb_yield
-#define _priq_run_best		z_priq_rb_best
+# if defined(CONFIG_SCHED_CPU_MASK)
+#  define _priq_run_best	z_priq_rb_mask_best
+# else
+#  define _priq_run_best	z_priq_rb_best
+# endif
  /* Multi Queue Scheduling */
 #elif defined(CONFIG_SCHED_MULTIQ)
 #define _priq_run_init		z_priq_mq_init
 #define _priq_run_add		z_priq_mq_add
 #define _priq_run_remove	z_priq_mq_remove
 #define _priq_run_yield         z_priq_mq_yield
-#define _priq_run_best		z_priq_mq_best
+# if defined(CONFIG_SCHED_CPU_MASK)
+#  define _priq_run_best	z_priq_mq_mask_best
+# else
+#  define _priq_run_best	z_priq_mq_best
+# endif
 #endif
 
 /* Scalable Wait Queue */
@@ -194,6 +202,7 @@ static ALWAYS_INLINE void z_priq_rb_init(struct _priq_rb *pq)
 	*pq = (struct _priq_rb) {
 		.tree = {
 			.lessthan_fn = z_priq_rb_lessthan,
+			.max_depth = 32,
 		}
 	};
 }
@@ -248,6 +257,13 @@ static ALWAYS_INLINE struct k_thread *z_priq_rb_best(struct _priq_rb *pq)
 	}
 	return thread;
 }
+
+#ifdef CONFIG_SCHED_CPU_MASK
+static ALWAYS_INLINE struct k_thread *z_priq_rb_mask_best(struct _priq_rb *pq)
+{
+	return z_priq_rb_best(pq);
+}
+#endif
 #endif
 
 struct prio_info {
@@ -348,6 +364,14 @@ static ALWAYS_INLINE struct k_thread *z_priq_mq_best(struct _priq_mq *pq)
 
 	return NULL;
 }
+
+#ifdef CONFIG_SCHED_CPU_MASK
+static ALWAYS_INLINE struct k_thread *z_priq_mq_mask_best(struct _priq_mq *pq)
+{
+	return z_priq_mq_best(pq);
+}
+#endif
+
 #ifdef IAR_SUPPRESS_ALWAYS_INLINE_WARNING_FLAG
 TOOLCHAIN_ENABLE_WARNING(TOOLCHAIN_WARNING_ALWAYS_INLINE)
 #endif

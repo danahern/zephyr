@@ -124,15 +124,19 @@ config SCHED_DEADLINE
 
 config SCHED_CPU_MASK
 	bool "CPU mask affinity/pinning API"
-	depends on SCHED_SIMPLE
+	depends on SCHED_SIMPLE || SCHED_SCALABLE || SCHED_MULTIQ
 	help
 	  When true, the application will have access to the
 	  k_thread_cpu_mask_*() APIs which control per-CPU affinity masks in
 	  SMP mode, allowing applications to pin threads to specific CPUs or
-	  disallow threads from running on given CPUs.  Note that as currently
-	  implemented, this involves an inherent O(N) scaling in the number of
-	  idle-but-runnable threads, and thus works only with the simple
-	  scheduler (as SCALABLE and MULTIQ would see no benefit).
+	  disallow threads from running on given CPUs.  At scheduling time,
+	  the ready queue is walked to find the highest-priority thread
+	  whose cpu_mask includes the current CPU:
+	    - SCHED_SIMPLE: O(N) walk of the sorted linked list
+	    - SCHED_SCALABLE: O(log N + k) rbtree in-order traversal
+	      (k = masked-out higher-priority threads)
+	    - SCHED_MULTIQ: O(P + k) walk across P non-empty priority
+	      queues (k = masked-out threads in checked queues)
 
 	  Note that this setting does not technically depend on SMP and is
 	  implemented without it for testing purposes, but for obvious reasons
