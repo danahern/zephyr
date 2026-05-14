@@ -180,9 +180,6 @@ static ALWAYS_INLINE struct k_thread *z_priq_simple_best(sys_dlist_t *pq)
 #ifdef CONFIG_SCHED_CPU_MASK
 static ALWAYS_INLINE struct k_thread *z_priq_simple_mask_best(sys_dlist_t *pq)
 {
-	/* With masks enabled we need to be prepared to walk the list
-	 * looking for one we can run
-	 */
 	struct k_thread *thread;
 
 	SYS_DLIST_FOR_EACH_CONTAINER(pq, thread, base.qnode_dlist) {
@@ -190,7 +187,7 @@ static ALWAYS_INLINE struct k_thread *z_priq_simple_mask_best(sys_dlist_t *pq)
 			return thread;
 		}
 	}
-	return NULL;
+	return z_priq_simple_best(pq);
 }
 #endif /* CONFIG_SCHED_CPU_MASK */
 
