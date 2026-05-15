@@ -467,6 +467,8 @@ void rb_remove(struct rbtree *tree, struct rbnode *node)
 		} else {
 			tree->max_depth = 0;
 		}
+		node->children[0] = NULL;
+		node->children[1] = NULL;
 		return;
 	}
 
@@ -498,6 +500,8 @@ void rb_remove(struct rbtree *tree, struct rbnode *node)
 
 	/* We may have rotated up into the root! */
 	tree->root = stack[0];
+	node->children[0] = NULL;
+	node->children[1] = NULL;
 }
 
 #ifndef CONFIG_MISRA_SANE

@@ -469,6 +469,37 @@ static bool is_recoverable(struct arch_esf *esf, uint64_t esr, uint64_t far,
 	return false;
 }
 
+struct fault_dump {
+	uint64_t magic;
+	uint64_t esr;
+	uint64_t elr;
+	uint64_t far;
+	uint64_t sp;
+	uint64_t cpu_id;
+	uint64_t reason;
+};
+
+#define FAULT_DUMP_ADDR  0xD7FF0000
+#define FAULT_DUMP_MAGIC 0xDEADFACECAFEF001ULL
+
+static void fault_dump_early(unsigned int reason, uint64_t esr,
+			     uint64_t elr, uint64_t far)
+{
+	volatile struct fault_dump *dump =
+		(volatile struct fault_dump *)FAULT_DUMP_ADDR;
+	uint64_t sp;
+
+	__asm__ volatile("mov %0, sp" : "=r" (sp));
+	dump->magic = FAULT_DUMP_MAGIC;
+	dump->esr = esr;
+	dump->elr = elr;
+	dump->far = far;
+	dump->sp = sp;
+	dump->cpu_id = read_mpidr_el1() & 0xFF;
+	dump->reason = reason;
+	barrier_dmem_fence_full();
+}
+
 void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf)
 {
 	uint64_t esr = 0;
@@ -484,6 +515,7 @@ void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf)
 			esr = read_esr_el1();
 			far = read_far_el1();
 			elr = read_elr_el1();
+			fault_dump_early(reason, esr, elr, far);
 			break;
 #if !defined(CONFIG_ARMV8_R)
 		case MODE_EL3:
