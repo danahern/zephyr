@@ -959,7 +959,9 @@ void *z_get_next_switch_handle(void *interrupted)
 				runq_add(old_thread);
 			}
 		}
-		old_thread->switch_handle = interrupted;
+		if (old_thread->switch_handle == NULL) {
+			old_thread->switch_handle = interrupted;
+		}
 		ret = new_thread->switch_handle;
 		/* Active threads MUST have a null here */
 		new_thread->switch_handle = NULL;
@@ -1325,7 +1327,6 @@ static ALWAYS_INLINE void halt_thread(struct k_thread *thread, uint8_t new_state
 				unpend_thread_no_timeout(thread);
 			}
 			z_abort_thread_timeout(thread);
-			unpend_all(&thread->join_queue);
 
 			/* Edge case: aborting _current from within an
 			 * ISR that preempted it requires clearing the
@@ -1373,6 +1374,18 @@ static ALWAYS_INLINE void halt_thread(struct k_thread *thread, uint8_t new_state
 #ifdef CONFIG_THREAD_ABORT_NEED_CLEANUP
 		k_thread_abort_cleanup(thread);
 #endif /* CONFIG_THREAD_ABORT_NEED_CLEANUP */
+
+		/* Wake joiners only after all cleanup is complete.
+		 * Otherwise a joiner on another CPU can k_thread_create()
+		 * on the same thread struct while cleanup code above is
+		 * still accessing it.
+		 */
+#ifdef CONFIG_USE_SWITCH
+		if (thread == _current) {
+			thread->switch_handle = (void *)1;
+		}
+#endif
+		unpend_all(&thread->join_queue);
 
 		/* Do this "set _current to dummy" step last so that
 		 * subsystems above can rely on _current being

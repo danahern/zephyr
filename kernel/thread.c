@@ -876,7 +876,7 @@ k_tid_t z_vrfy_k_thread_create(struct k_thread *new_thread,
 void z_init_thread_base(struct _thread_base *thread_base, int priority,
 		       uint32_t initial_state, unsigned int options)
 {
-	/* k_q_node is initialized upon first insertion in a list */
+	sys_dnode_init(&thread_base->qnode_dlist);
 	thread_base->pended_on = NULL;
 	thread_base->user_options = (uint16_t)options;
 	thread_base->thread_state = (uint8_t)initial_state;
