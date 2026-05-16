@@ -240,6 +240,12 @@ static ALWAYS_INLINE struct k_thread *next_up(void)
 	if (active) {
 		int32_t cmp = z_sched_prio_cmp(_current, thread);
 
+#if defined(CONFIG_SCHED_CPU_MASK) && !defined(CONFIG_SCHED_CPU_MASK_PIN_ONLY)
+		if ((thread->base.cpu_mask & BIT(_current_cpu->id)) == 0) {
+			cmp = 1;
+		}
+#endif
+
 		/* Ties only switch if state says we yielded */
 		if ((cmp > 0) || ((cmp == 0) && !_current_cpu->swap_ok)) {
 			thread = _current;

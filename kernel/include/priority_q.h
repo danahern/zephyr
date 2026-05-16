@@ -27,14 +27,22 @@
 #define _priq_run_add		z_priq_rb_add
 #define _priq_run_remove	z_priq_rb_remove
 #define _priq_run_yield         z_priq_rb_yield
-#define _priq_run_best		z_priq_rb_best
+# if defined(CONFIG_SCHED_CPU_MASK)
+#  define _priq_run_best	z_priq_rb_mask_best
+# else
+#  define _priq_run_best	z_priq_rb_best
+# endif
  /* Multi Queue Scheduling */
 #elif defined(CONFIG_SCHED_MULTIQ)
 #define _priq_run_init		z_priq_mq_init
 #define _priq_run_add		z_priq_mq_add
 #define _priq_run_remove	z_priq_mq_remove
 #define _priq_run_yield         z_priq_mq_yield
-#define _priq_run_best		z_priq_mq_best
+# if defined(CONFIG_SCHED_CPU_MASK)
+#  define _priq_run_best	z_priq_mq_mask_best
+# else
+#  define _priq_run_best	z_priq_mq_best
+# endif
 #endif
 
 /* Scalable Wait Queue */
@@ -172,9 +180,6 @@ static ALWAYS_INLINE struct k_thread *z_priq_simple_best(sys_dlist_t *pq)
 #ifdef CONFIG_SCHED_CPU_MASK
 static ALWAYS_INLINE struct k_thread *z_priq_simple_mask_best(sys_dlist_t *pq)
 {
-	/* With masks enabled we need to be prepared to walk the list
-	 * looking for one we can run
-	 */
 	struct k_thread *thread;
 
 	SYS_DLIST_FOR_EACH_CONTAINER(pq, thread, base.qnode_dlist) {
@@ -182,7 +187,7 @@ static ALWAYS_INLINE struct k_thread *z_priq_simple_mask_best(sys_dlist_t *pq)
 			return thread;
 		}
 	}
-	return NULL;
+	return z_priq_simple_best(pq);
 }
 #endif /* CONFIG_SCHED_CPU_MASK */
 
@@ -248,6 +253,13 @@ static ALWAYS_INLINE struct k_thread *z_priq_rb_best(struct _priq_rb *pq)
 	}
 	return thread;
 }
+
+#ifdef CONFIG_SCHED_CPU_MASK
+static ALWAYS_INLINE struct k_thread *z_priq_rb_mask_best(struct _priq_rb *pq)
+{
+	return z_priq_rb_best(pq);
+}
+#endif
 #endif
 
 struct prio_info {
@@ -348,6 +360,14 @@ static ALWAYS_INLINE struct k_thread *z_priq_mq_best(struct _priq_mq *pq)
 
 	return NULL;
 }
+
+#ifdef CONFIG_SCHED_CPU_MASK
+static ALWAYS_INLINE struct k_thread *z_priq_mq_mask_best(struct _priq_mq *pq)
+{
+	return z_priq_mq_best(pq);
+}
+#endif
+
 #ifdef IAR_SUPPRESS_ALWAYS_INLINE_WARNING_FLAG
 TOOLCHAIN_ENABLE_WARNING(TOOLCHAIN_WARNING_ALWAYS_INLINE)
 #endif
